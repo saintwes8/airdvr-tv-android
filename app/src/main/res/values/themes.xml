@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AirDVR" parent="Theme.AppCompat.NoTitleBar">
+        <item name="android:colorBackground">#0A0E17</item>
+        <item name="android:windowBackground">#0A0E17</item>
+        <item name="android:statusBarColor">#0A0E17</item>
+        <item name="android:navigationBarColor">#0A0E17</item>
+        <item name="colorPrimary">#1A6EBD</item>
+        <item name="colorPrimaryDark">#0A0E17</item>
+        <item name="colorAccent">#E85D26</item>
+        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:textColorSecondary">#9CA3AF</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>

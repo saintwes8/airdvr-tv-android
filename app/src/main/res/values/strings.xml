@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AirDVR</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_live_tv">Live TV</string>
+    <string name="nav_guide">Guide</string>
+    <string name="nav_multiview">MultiView</string>
+    <string name="nav_recordings">Recordings</string>
+    <string name="nav_settings">Settings</string>
+    <string name="sign_in">Sign In</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="email">Email</string>
+    <string name="password">Password</string>
+    <string name="error_login_failed">Login failed. Please check your credentials.</string>
+    <string name="tuning">Tuning…</string>
+    <string name="watch_now">Watch Now</string>
+    <string name="record">Record</string>
+    <string name="coming_soon">Coming Soon</string>
+    <string name="continue_watching">Continue Watching</string>
+    <string name="live_now">Live Now</string>
+    <string name="recent_recordings">Recent Recordings</string>
+    <string name="no_channels">No channels available</string>
+    <string name="no_recordings">No recordings found</string>
+</resources>
