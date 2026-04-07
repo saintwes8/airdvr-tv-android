@@ -1,14 +1,14 @@
 package com.airdvr.tv.ui.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -23,83 +23,57 @@ import com.airdvr.tv.ui.theme.*
 @Composable
 fun ChannelCard(
     channel: Channel,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    isSelected: Boolean = false,
+    onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.05f else 1.0f,
-        label = "channelCardScale"
-    )
-
-    val borderColor = when {
-        isSelected -> AirDVROrange
-        isFocused -> AirDVRFocusRing
-        else -> Color.Transparent
-    }
 
     Card(
         onClick = onClick,
-        modifier = modifier
-            .scale(scale)
-            .onFocusChanged { isFocused = it.isFocused }
-            .width(160.dp)
-            .height(80.dp),
+        modifier = Modifier
+            .width(200.dp)
+            .height(112.dp)
+            .onFocusChanged { isFocused = it.isFocused },
         shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = CardDefaults.colors(
-            containerColor = if (isSelected) AirDVRBlue.copy(alpha = 0.3f) else AirDVRCard,
-            focusedContainerColor = AirDVRCard,
-            pressedContainerColor = AirDVRBlue.copy(alpha = 0.5f)
+            containerColor = PlexCard.copy(alpha = 0.80f),
+            focusedContainerColor = PlexBorder.copy(alpha = 0.95f)
         ),
         border = CardDefaults.border(
-            border = Border(BorderStroke(2.dp, borderColor)),
-            focusedBorder = Border(BorderStroke(2.dp, AirDVRFocusRing))
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Column(
+            modifier = Modifier.fillMaxSize().padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Channel number
-            Text(
-                text = channel.guideNumber,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isSelected) AirDVROrange else AirDVRTextPrimary,
-                modifier = Modifier.width(40.dp)
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = channel.guideName,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = AirDVRTextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    channel.guideNumber ?: "",
+                    fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
                 )
-
-                if (channel.hd == 1) {
-                    Box(
-                        modifier = Modifier
-                            .background(AirDVRBlue, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "HD",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
+                Text(
+                    channel.guideName ?: "",
+                    fontSize = 14.sp, color = PlexTextSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // LIVE dot
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFEF4444))
+                )
+                Text("LIVE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
             }
         }
     }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.AirDVR" parent="Theme.AppCompat.NoTitleBar">
+    <style name="Theme.AirDVR" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:colorBackground">#0A0E17</item>
         <item name="android:windowBackground">#0A0E17</item>
         <item name="android:statusBarColor">#0A0E17</item>

@@ -2,7 +2,9 @@ package com.airdvr.tv.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.Channel
+import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.Recording
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.RecordingsRepository
@@ -12,11 +14,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class LiveChannelEntry(
+    val channel: Channel,
+    val program: EpgProgram?
+)
+
+data class UpcomingEntry(
+    val channel: Channel,
+    val program: EpgProgram
+)
+
 data class HomeUiState(
     val isLoading: Boolean = true,
-    val continueWatching: List<Recording> = emptyList(),
-    val liveNow: List<Channel> = emptyList(),
-    val recentRecordings: List<Recording> = emptyList(),
+    val heroChannel: Channel? = null,
+    val heroProgram: EpgProgram? = null,
+    val liveNow: List<LiveChannelEntry> = emptyList(),
+    val recordings: List<Recording> = emptyList(),
+    val upcoming: List<UpcomingEntry> = emptyList(),
+    val userInitial: String = "",
     val error: String? = null
 )
 
@@ -29,6 +44,9 @@ class HomeViewModel : ViewModel() {
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     init {
+        val email = runCatching { AirDVRApp.instance.tokenManager.getUserEmail() }.getOrDefault("")
+        val initial = email.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
+        _uiState.value = _uiState.value.copy(userInitial = initial)
         load()
     }
 
@@ -36,37 +54,49 @@ class HomeViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val channelsDeferred = async { guideRepo.getChannels() }
+                val guideDeferred = async { guideRepo.getChannelsWithPrograms() }
                 val recordingsDeferred = async { recordingsRepo.getRecordings() }
 
-                val channelsResult = channelsDeferred.await()
+                val guideResult = guideDeferred.await()
                 val recordingsResult = recordingsDeferred.await()
 
                 var newState = _uiState.value.copy(isLoading = false)
 
-                channelsResult.onSuccess { channels ->
-                    val liveNow = channels
-                        .filter { it.favorite == 1 }
-                        .take(10)
-                        .ifEmpty { channels.take(10) }
-                    newState = newState.copy(liveNow = liveNow)
-                }.onFailure { e ->
-                    newState = newState.copy(error = e.message)
-                }
+                guideResult.onSuccess { (channels, programs) ->
+                    val sorted = channels.sortedBy { it.guideNumber?.toDoubleOrNull() ?: Double.MAX_VALUE }
+                    val byChannel = if (programs.any { it.guideNumber != null }) {
+                        programs.filter { it.guideNumber != null }.groupBy { it.guideNumber!! }
+                    } else emptyMap()
+
+                    val now = System.currentTimeMillis() / 1000
+                    val twoHours = now + (2 * 3600L)
+
+                    fun currentProgram(ch: Channel): EpgProgram? {
+                        val list = byChannel[ch.guideNumber ?: ""] ?: return null
+                        return list.firstOrNull { it.startEpochSec <= now && now < it.endEpochSec }
+                    }
+
+                    val liveNow = sorted.take(15).map { ch -> LiveChannelEntry(ch, currentProgram(ch)) }
+                    val hero = sorted.firstOrNull { it.favorite == true } ?: sorted.firstOrNull()
+                    val heroProg = hero?.let { currentProgram(it) }
+
+                    val upcoming = sorted.flatMap { ch ->
+                        val list = byChannel[ch.guideNumber ?: ""] ?: emptyList()
+                        list.filter { it.startEpochSec in (now + 1)..twoHours }
+                            .map { UpcomingEntry(ch, it) }
+                    }.sortedBy { it.program.startEpochSec }.take(20)
+
+                    newState = newState.copy(
+                        heroChannel = hero,
+                        heroProgram = heroProg,
+                        liveNow = liveNow,
+                        upcoming = upcoming
+                    )
+                }.onFailure { e -> newState = newState.copy(error = e.message) }
 
                 recordingsResult.onSuccess { recordings ->
-                    val continueWatching = recordings
-                        .filter { it.resumePositionSec > 0 }
-                        .sortedByDescending { it.startTime }
-                        .take(10)
-                    val recent = recordings
-                        .filter { it.resumePositionSec == 0 }
-                        .sortedByDescending { it.startTime }
-                        .take(10)
-                    newState = newState.copy(
-                        continueWatching = continueWatching,
-                        recentRecordings = recent
-                    )
+                    val sorted = recordings.sortedByDescending { it.startEpochSec }.take(20)
+                    newState = newState.copy(recordings = sorted)
                 }
 
                 _uiState.value = newState

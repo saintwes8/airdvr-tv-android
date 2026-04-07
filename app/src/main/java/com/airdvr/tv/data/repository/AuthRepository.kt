@@ -18,7 +18,8 @@ class AuthRepository(
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body != null) {
-                    tokenManager.saveTokens(body.accessToken, body.refreshToken)
+                    tokenManager.saveTokens(body.accessToken ?: "", body.refreshToken ?: "")
+                    tokenManager.saveEmail(email)
                     Result.success(Unit)
                 } else {
                     Result.failure(Exception("Empty response body"))
@@ -52,7 +53,7 @@ class AuthRepository(
             if (response.isSuccessful) {
                 val body = response.body()
                 if (body != null) {
-                    tokenManager.saveTokens(body.accessToken, body.refreshToken)
+                    tokenManager.saveTokens(body.accessToken ?: "", body.refreshToken ?: "")
                     Result.success(Unit)
                 } else {
                     Result.failure(Exception("Empty refresh response"))

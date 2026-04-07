@@ -35,6 +35,7 @@ class SettingsViewModel : ViewModel() {
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
+        _uiState.value = _uiState.value.copy(userEmail = tokenManager.getUserEmail())
         load()
     }
 
@@ -54,7 +55,7 @@ class SettingsViewModel : ViewModel() {
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    tuners = tunersResponse?.body() ?: emptyList(),
+                    tuners = tunersResponse?.body()?.tuners ?: emptyList(),
                     storageInfo = storageResponse?.body()
                 )
             } catch (e: Exception) {

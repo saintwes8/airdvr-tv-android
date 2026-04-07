@@ -14,255 +14,137 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.tv.material3.ExperimentalTvMaterial3Api
 import com.airdvr.tv.data.repository.AuthRepository
-import com.airdvr.tv.ui.theme.*
 import kotlinx.coroutines.launch
 
+private val Bg = Color(0xFF000000)
+private val FieldBg = Color(0xFF161B22)
+private val FieldBorder = Color(0xFF30363D)
+private val TextW = Color(0xFFE6EDF3)
+private val TextMuted = Color(0xFF484F58)
+private val TextGray = Color(0xFF8B949E)
+private val BtnBg = Color(0xFF21262D)
+
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
+    val authRepo = remember { AuthRepository() }
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var showPinDialog by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
 
-    val focusManager = LocalFocusManager.current
-    val scope = rememberCoroutineScope()
-    val authRepo = remember { AuthRepository() }
-
-    if (showPinDialog) {
-        Dialog(onDismissRequest = { showPinDialog = false }) {
-            Card(
-                modifier = Modifier
-                    .width(400.dp)
-                    .padding(16.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = AirDVRCard)
-            ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "PIN Login",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AirDVRTextPrimary
-                    )
-                    Text(
-                        text = "Coming soon — PIN-based authentication will let you sign in without a keyboard.",
-                        fontSize = 14.sp,
-                        color = AirDVRTextSecondary
-                    )
-                    Button(
-                        onClick = { showPinDialog = false },
-                        colors = ButtonDefaults.buttonColors(containerColor = AirDVRBlue)
-                    ) {
-                        Text("Close", color = Color.White)
-                    }
-                }
-            }
+    fun doLogin() {
+        if (email.isBlank() || password.isBlank()) { error = "Please enter email and password"; return }
+        isLoading = true; error = null
+        scope.launch {
+            authRepo.login(email, password)
+                .onSuccess { isLoading = false; onLoginSuccess() }
+                .onFailure { isLoading = false; error = it.message }
         }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AirDVRNavy),
+        modifier = Modifier.fillMaxSize().background(Bg),
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(360.dp)
         ) {
-            // Left branding panel
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(1f)
-                    .background(AirDVRCard),
-                contentAlignment = Alignment.Center
+            // Logo
+            androidx.tv.material3.Text(
+                "AirDVR", fontSize = 52.sp, fontWeight = FontWeight.Bold, color = TextW
+            )
+            Spacer(Modifier.height(8.dp))
+            androidx.tv.material3.Text(
+                "Cloud DVR for cord-cutters", fontSize = 16.sp, color = TextGray
+            )
+
+            Spacer(Modifier.height(48.dp))
+
+            // Email
+            OutlinedTextField(
+                value = email, onValueChange = { email = it },
+                placeholder = { Text("Email", color = TextMuted, fontSize = 16.sp) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                textStyle = LocalTextStyle.current.copy(color = TextW, fontSize = 16.sp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = TextW.copy(alpha = 0.4f),
+                    unfocusedBorderColor = FieldBorder,
+                    focusedTextColor = TextW, unfocusedTextColor = TextW,
+                    cursorColor = TextW,
+                    focusedContainerColor = FieldBg, unfocusedContainerColor = FieldBg
+                )
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Password
+            OutlinedTextField(
+                value = password, onValueChange = { password = it },
+                placeholder = { Text("Password", color = TextMuted, fontSize = 16.sp) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); doLogin() }),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                textStyle = LocalTextStyle.current.copy(color = TextW, fontSize = 16.sp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = TextW.copy(alpha = 0.4f),
+                    unfocusedBorderColor = FieldBorder,
+                    focusedTextColor = TextW, unfocusedTextColor = TextW,
+                    cursorColor = TextW,
+                    focusedContainerColor = FieldBg, unfocusedContainerColor = FieldBg
+                )
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            // Sign In button
+            OutlinedButton(
+                onClick = { doLogin() },
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(containerColor = BtnBg, contentColor = TextW),
+                border = androidx.compose.foundation.BorderStroke(1.dp, FieldBorder)
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = "AirDVR",
-                        fontSize = 48.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AirDVRBlue
-                    )
-                    Text(
-                        text = "Your personal TV, anywhere.",
-                        fontSize = 18.sp,
-                        color = AirDVRTextSecondary
-                    )
+                if (isLoading) {
+                    CircularProgressIndicator(color = TextW, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Sign In", fontSize = 16.sp, fontWeight = FontWeight.Medium, color = TextW)
                 }
             }
 
-            // Right sign-in form
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .weight(1f)
-                    .padding(horizontal = 64.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.Start,
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Sign In",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = AirDVRTextPrimary
-                    )
-
-                    // Email field
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = {
-                            Text("Email", color = AirDVRTextSecondary, fontSize = 16.sp)
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Email,
-                            imeAction = ImeAction.Next
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AirDVRBlue,
-                            unfocusedBorderColor = AirDVRTextSecondary,
-                            focusedTextColor = AirDVRTextPrimary,
-                            unfocusedTextColor = AirDVRTextPrimary,
-                            cursorColor = AirDVRBlue,
-                            focusedContainerColor = AirDVRCard,
-                            unfocusedContainerColor = AirDVRCard
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 18.sp)
-                    )
-
-                    // Password field
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = {
-                            Text("Password", color = AirDVRTextSecondary, fontSize = 16.sp)
-                        },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                focusManager.clearFocus()
-                                if (email.isNotBlank() && password.isNotBlank() && !isLoading) {
-                                    scope.launch {
-                                        isLoading = true
-                                        errorMessage = null
-                                        authRepo.login(email, password)
-                                            .onSuccess { onLoginSuccess() }
-                                            .onFailure { e -> errorMessage = e.message }
-                                        isLoading = false
-                                    }
-                                }
-                            }
-                        ),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AirDVRBlue,
-                            unfocusedBorderColor = AirDVRTextSecondary,
-                            focusedTextColor = AirDVRTextPrimary,
-                            unfocusedTextColor = AirDVRTextPrimary,
-                            cursorColor = AirDVRBlue,
-                            focusedContainerColor = AirDVRCard,
-                            unfocusedContainerColor = AirDVRCard
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        textStyle = LocalTextStyle.current.copy(fontSize = 18.sp)
-                    )
-
-                    // Error message
-                    if (errorMessage != null) {
-                        Text(
-                            text = errorMessage!!,
-                            color = Color.Red,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    // Sign In button
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                if (email.isBlank() || password.isBlank()) {
-                                    errorMessage = "Please enter your email and password."
-                                    return@launch
-                                }
-                                isLoading = true
-                                errorMessage = null
-                                authRepo.login(email, password)
-                                    .onSuccess { onLoginSuccess() }
-                                    .onFailure { e -> errorMessage = e.message }
-                                isLoading = false
-                            }
-                        },
-                        enabled = !isLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AirDVRBlue,
-                            disabledContainerColor = AirDVRBlue.copy(alpha = 0.5f)
-                        )
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                text = "Sign In",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
-                            )
-                        }
-                    }
-
-                    // PIN login option
-                    TextButton(
-                        onClick = { showPinDialog = true },
-                        modifier = Modifier.align(Alignment.CenterHorizontally)
-                    ) {
-                        Text(
-                            text = "Enter PIN instead",
-                            color = AirDVRTextSecondary,
-                            fontSize = 14.sp
-                        )
-                    }
-                }
+            // Error
+            if (error != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(error ?: "", color = Color(0xFFEF4444), fontSize = 14.sp)
             }
+
+            Spacer(Modifier.height(24.dp))
+            Text("Enter PIN code instead", color = TextMuted, fontSize = 14.sp)
         }
+
+        // Version
+        Text(
+            "v1.0.0", color = FieldBorder, fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp)
+        )
     }
 }

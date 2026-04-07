@@ -1,34 +1,49 @@
 package com.airdvr.tv.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
-val AirDVRNavy = Color(0xFF0A0E17)
-val AirDVRCard = Color(0xFF111827)
-val AirDVRBlue = Color(0xFF1A6EBD)
-val AirDVROrange = Color(0xFFE85D26)
-val AirDVRTextPrimary = Color(0xFFFFFFFF)
-val AirDVRTextSecondary = Color(0xFF9CA3AF)
-val AirDVRFocusRing = Color(0xFF2E90FA)
-val AirDVRGreen = Color(0xFF22C55E)
-val AirDVRRed = Color(0xFFEF4444)
-val AirDVRPurple = Color(0xFFA855F7)
+// ── Plex Dark Palette ───────────────────────────────────────────────────
+val PlexBg = Color(0xFF0D1117)
+val PlexSurface = Color(0xFF161B22)
+val PlexCard = Color(0xFF21262D)
+val PlexBorder = Color(0xFF30363D)
 
+val PlexTextPrimary = Color(0xFFE6EDF3)
+val PlexTextSecondary = Color(0xFF8B949E)
+val PlexTextTertiary = Color(0xFF484F58)
+
+val PlexAccent = Color(0xFF1A6EBD) // Nav rail focused icons ONLY
+val LiveRedDot = Color(0xFFEF4444)  // LIVE indicator dot ONLY
+
+// ── Legacy exports (PlayerScreen compat) ────────────────────────────────
+val AirDVRNavy = PlexBg
+val AirDVRBlue = PlexTextPrimary
+val AirDVROrange = PlexTextPrimary
+val AirDVRCard = PlexCard
+val AirDVRTextPrimary = PlexTextPrimary
+val AirDVRFocusRing = PlexTextPrimary
+
+// ── Theme wrapper ───────────────────────────────────────────────────────
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun AirDVRTheme(content: @Composable () -> Unit) {
     val colorScheme = darkColorScheme(
-        primary = AirDVRBlue,
-        secondary = AirDVROrange,
-        background = AirDVRNavy,
-        surface = AirDVRCard,
-        onPrimary = Color.White,
-        onSecondary = Color.White,
-        onBackground = AirDVRTextPrimary,
-        onSurface = AirDVRTextPrimary,
+        primary = PlexTextPrimary,
+        onPrimary = PlexBg,
+        secondary = PlexTextSecondary,
+        onSecondary = PlexBg,
+        background = PlexBg,
+        onBackground = PlexTextPrimary,
+        surface = PlexSurface,
+        onSurface = PlexTextPrimary,
+        surfaceVariant = PlexCard,
+        onSurfaceVariant = PlexTextSecondary,
+        border = PlexBorder
     )
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

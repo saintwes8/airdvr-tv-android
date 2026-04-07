@@ -19,7 +19,7 @@ interface AirDVRApi {
     suspend fun getRecordings(): Response<List<Recording>>
 
     @GET("api/tuners")
-    suspend fun getTuners(): Response<List<TunerInfo>>
+    suspend fun getTuners(): Response<TunersResponse>
 
     @GET("api/storage")
     suspend fun getStorage(): Response<StorageInfo>
@@ -32,4 +32,7 @@ interface AirDVRApi {
         @Path("id") id: String,
         @Body body: Map<String, Int>
     ): Response<Unit>
+
+    @GET("api/watch-providers")
+    suspend fun getWatchProviders(@Query("title") title: String): Response<List<WatchProvider>>
 }

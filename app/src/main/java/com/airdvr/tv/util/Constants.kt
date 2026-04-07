@@ -15,13 +15,15 @@ object Constants {
     const val PREFS_NAME = "airdvr_secure_prefs"
     const val KEY_ACCESS_TOKEN = "access_token"
     const val KEY_REFRESH_TOKEN = "refresh_token"
+    const val KEY_USER_EMAIL = "user_email"
 
     // Navigation routes
     const val ROUTE_HOME = "home"
     const val ROUTE_LIVE_TV = "live_tv"
-    const val ROUTE_GUIDE = "guide"
-    const val ROUTE_MULTIVIEW = "multiview"
+    const val ROUTE_WHERE_TO_WATCH = "where_to_watch"
+    const val ROUTE_SPORTS_CALENDAR = "sports_calendar"
     const val ROUTE_RECORDINGS = "recordings"
+    const val ROUTE_CUSTOM_CHANNELS = "custom_channels"
     const val ROUTE_PLAYER = "player/{recordingId}"
     const val ROUTE_SETTINGS = "settings"
     const val ROUTE_LOGIN = "login"

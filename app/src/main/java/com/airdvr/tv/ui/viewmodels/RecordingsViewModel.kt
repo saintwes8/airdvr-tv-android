@@ -58,16 +58,16 @@ class RecordingsViewModel : ViewModel() {
         return when (category) {
             RecordingCategory.ALL -> recordings
             RecordingCategory.TV_SHOWS -> recordings.filter { r ->
-                val cats = r.category?.map { it.lowercase() } ?: emptyList()
-                cats.any { it.contains("series") || it.contains("tv") || it.contains("show") || it.contains("episode") }
+                val cat = r.category?.lowercase() ?: ""
+                cat.contains("series") || cat.contains("tv") || cat.contains("show") || cat.contains("episode")
             }
             RecordingCategory.MOVIES -> recordings.filter { r ->
-                val cats = r.category?.map { it.lowercase() } ?: emptyList()
-                cats.any { it.contains("movie") || it.contains("film") || it.contains("cinema") }
+                val cat = r.category?.lowercase() ?: ""
+                cat.contains("movie") || cat.contains("film") || cat.contains("cinema")
             }
             RecordingCategory.SPORTS -> recordings.filter { r ->
-                val cats = r.category?.map { it.lowercase() } ?: emptyList()
-                cats.any { it.contains("sport") }
+                val cat = r.category?.lowercase() ?: ""
+                cat.contains("sport")
             }
         }
     }

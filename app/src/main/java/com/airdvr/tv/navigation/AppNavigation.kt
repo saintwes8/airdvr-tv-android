@@ -1,7 +1,6 @@
 package com.airdvr.tv.navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -17,9 +16,8 @@ fun AppNavigation() {
     val navController = rememberNavController()
     val tokenManager = remember { AirDVRApp.instance.tokenManager }
 
-    // Determine start destination based on auth state
     val startDestination = if (tokenManager.isLoggedIn()) {
-        Constants.ROUTE_HOME
+        Constants.ROUTE_LIVE_TV
     } else {
         Constants.ROUTE_LOGIN
     }
@@ -31,7 +29,7 @@ fun AppNavigation() {
         composable(Constants.ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {
-                    navController.navigate(Constants.ROUTE_HOME) {
+                    navController.navigate(Constants.ROUTE_LIVE_TV) {
                         popUpTo(Constants.ROUTE_LOGIN) { inclusive = true }
                     }
                 }
@@ -41,9 +39,10 @@ fun AppNavigation() {
         composable(Constants.ROUTE_HOME) {
             HomeScreen(
                 onNavigateLiveTV = { navController.navigate(Constants.ROUTE_LIVE_TV) },
-                onNavigateGuide = { navController.navigate(Constants.ROUTE_GUIDE) },
-                onNavigateMultiView = { navController.navigate(Constants.ROUTE_MULTIVIEW) },
+                onNavigateWhereToWatch = { navController.navigate(Constants.ROUTE_WHERE_TO_WATCH) },
+                onNavigateSportsCalendar = { navController.navigate(Constants.ROUTE_SPORTS_CALENDAR) },
                 onNavigateRecordings = { navController.navigate(Constants.ROUTE_RECORDINGS) },
+                onNavigateCustomChannels = { navController.navigate(Constants.ROUTE_CUSTOM_CHANNELS) },
                 onNavigateSettings = { navController.navigate(Constants.ROUTE_SETTINGS) },
                 onNavigatePlayer = { recordingId ->
                     navController.navigate("player/$recordingId")
@@ -58,26 +57,30 @@ fun AppNavigation() {
 
         composable(Constants.ROUTE_LIVE_TV) {
             LiveTVScreen(
-                onNavigateHome = { navController.popBackStack() },
-                onNavigateGuide = {
-                    navController.navigate(Constants.ROUTE_GUIDE)
+                onNavigateHome = { navController.navigate(Constants.ROUTE_HOME) },
+                onNavigateWhereToWatch = { navController.navigate(Constants.ROUTE_WHERE_TO_WATCH) },
+                onNavigateSportsCalendar = { navController.navigate(Constants.ROUTE_SPORTS_CALENDAR) },
+                onNavigateRecordings = { navController.navigate(Constants.ROUTE_RECORDINGS) },
+                onNavigateCustomChannels = { navController.navigate(Constants.ROUTE_CUSTOM_CHANNELS) },
+                onNavigateSettings = { navController.navigate(Constants.ROUTE_SETTINGS) }
+            )
+        }
+
+        composable(Constants.ROUTE_WHERE_TO_WATCH) {
+            WhereToWatchScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateLiveTV = { _ ->
+                    navController.navigate(Constants.ROUTE_LIVE_TV)
                 }
             )
         }
 
-        composable(Constants.ROUTE_GUIDE) {
-            GuideScreen(
-                onNavigateLiveTV = { channelNumber ->
-                    navController.navigate(Constants.ROUTE_LIVE_TV)
-                },
-                onBack = { navController.popBackStack() }
-            )
+        composable(Constants.ROUTE_SPORTS_CALENDAR) {
+            SportsCalendarScreen(onBack = { navController.popBackStack() })
         }
 
-        composable(Constants.ROUTE_MULTIVIEW) {
-            MultiViewScreen(
-                onBack = { navController.popBackStack() }
-            )
+        composable(Constants.ROUTE_CUSTOM_CHANNELS) {
+            CustomChannelsScreen(onBack = { navController.popBackStack() })
         }
 
         composable(Constants.ROUTE_RECORDINGS) {

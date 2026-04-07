@@ -32,6 +32,12 @@ class TokenManager(private val context: Context) {
             .apply()
     }
 
+    fun saveEmail(email: String) {
+        prefs.edit().putString(Constants.KEY_USER_EMAIL, email).apply()
+    }
+
+    fun getUserEmail(): String = prefs.getString(Constants.KEY_USER_EMAIL, "") ?: ""
+
     fun getAccessToken(): String? = prefs.getString(Constants.KEY_ACCESS_TOKEN, null)
 
     fun getRefreshToken(): String? = prefs.getString(Constants.KEY_REFRESH_TOKEN, null)
@@ -40,6 +46,7 @@ class TokenManager(private val context: Context) {
         prefs.edit()
             .remove(Constants.KEY_ACCESS_TOKEN)
             .remove(Constants.KEY_REFRESH_TOKEN)
+            .remove(Constants.KEY_USER_EMAIL)
             .apply()
     }
 

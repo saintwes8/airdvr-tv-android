@@ -64,11 +64,11 @@ object ApiClient {
                     if (refreshResponse.isSuccessful) {
                         val body = refreshResponse.body()
                         if (body != null) {
-                            tokenManager?.saveTokens(body.accessToken, body.refreshToken)
+                            tokenManager?.saveTokens(body.accessToken ?: "", body.refreshToken ?: "")
                             // Retry original request with new token
                             val newRequest = chain.request().newBuilder()
                                 .removeHeader("Authorization")
-                                .addHeader("Authorization", "Bearer ${body.accessToken}")
+                                .addHeader("Authorization", "Bearer ${body.accessToken ?: ""}")
                                 .build()
                             return@Interceptor chain.proceed(newRequest)
                         }
