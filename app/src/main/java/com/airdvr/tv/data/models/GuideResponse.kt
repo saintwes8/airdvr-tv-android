@@ -49,3 +49,15 @@ data class WatchProvider(
     @SerializedName("start_time") val startTime: String? = null,
     @SerializedName("description") val description: String? = null
 )
+
+data class ArtworkItem(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("poster_url") val posterUrl: String? = null,
+    @SerializedName("backdrop_url") val backdropUrl: String? = null
+)
+
+data class ArtworkResponse(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("poster_url") val posterUrl: String? = null,
+    @SerializedName("backdrop_url") val backdropUrl: String? = null
+)

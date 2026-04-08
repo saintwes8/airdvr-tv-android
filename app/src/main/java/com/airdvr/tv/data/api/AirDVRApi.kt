@@ -35,4 +35,10 @@ interface AirDVRApi {
 
     @GET("api/watch-providers")
     suspend fun getWatchProviders(@Query("title") title: String): Response<List<WatchProvider>>
+
+    @GET("api/artwork/popular")
+    suspend fun getPopularArtwork(): Response<List<ArtworkItem>>
+
+    @GET("api/artwork")
+    suspend fun getArtwork(@Query("title") title: String): Response<ArtworkResponse>
 }

@@ -48,6 +48,7 @@ data class LiveTVUiState(
     // Category filter
     val categories: List<String> = listOf("All Channels", "News", "Sports", "Entertainment", "Movies", "Kids"),
     val selectedCategoryIndex: Int = 0,
+    val categoriesFocused: Boolean = false,
 
     // MultiView
     val multiViewPanes: List<PaneState> = emptyList(),
@@ -63,6 +64,9 @@ data class LiveTVUiState(
     // Fullscreen overlay (UP press: action buttons + show details + artwork)
     val showFullscreenOverlay: Boolean = false,
 
+    // Slim now playing bar (auto-hides after 5s in fullscreen)
+    val nowPlayingBarVisible: Boolean = true,
+
     // Mute
     val isMuted: Boolean = false,
 
@@ -76,10 +80,21 @@ data class LiveTVUiState(
         get() {
             val cat = categories.getOrNull(selectedCategoryIndex) ?: "All Channels"
             if (cat == "All Channels") return channels
+            // Map category label → regex pattern (matched against current program category)
+            val pattern = when (cat) {
+                "News" -> Regex("news", RegexOption.IGNORE_CASE)
+                "Sports" -> Regex("sport", RegexOption.IGNORE_CASE)
+                "Entertainment" -> Regex("entertainment|comedy|drama|reality", RegexOption.IGNORE_CASE)
+                "Movies" -> Regex("movie|film", RegexOption.IGNORE_CASE)
+                "Kids" -> Regex("kids|children|animation|cartoon", RegexOption.IGNORE_CASE)
+                else -> return channels
+            }
+            val now = System.currentTimeMillis() / 1000
             return channels.filter { ch ->
                 val progs = programsByChannel[ch.guideNumber ?: ""] ?: emptyList()
-                progs.any { it.category?.contains(cat, ignoreCase = true) == true }
-            }.ifEmpty { channels }
+                val current = progs.firstOrNull { it.startEpochSec <= now && now < it.endEpochSec }
+                current?.category?.let { pattern.containsMatchIn(it) } == true
+            }
         }
 
     val focusedChannel: Channel?
@@ -117,18 +132,31 @@ class LiveTVViewModel : ViewModel() {
     val uiState: StateFlow<LiveTVUiState> = _uiState.asStateFlow()
 
     private var fullscreenOverlayJob: Job? = null
+    private var nowPlayingBarJob: Job? = null
     private var toastJob: Job? = null
 
     init {
         val now = System.currentTimeMillis() / 1000
+        val windowStart = floorTo30Min(now)
         val email = runCatching { AirDVRApp.instance.tokenManager.getUserEmail() }.getOrDefault("")
         val initial = email.firstOrNull()?.uppercaseChar()?.toString() ?: "U"
         _uiState.value = _uiState.value.copy(
             focusTimeEpoch = now,
-            timeWindowStartEpoch = now,
+            timeWindowStartEpoch = windowStart,
             userInitial = initial
         )
         loadData()
+    }
+
+    /** Round an epoch second value down to the nearest 30-minute boundary (in local time). */
+    private fun floorTo30Min(epochSec: Long): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.timeInMillis = epochSec * 1000L
+        val minute = cal.get(java.util.Calendar.MINUTE)
+        cal.set(java.util.Calendar.MINUTE, if (minute >= 30) 30 else 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis / 1000L
     }
 
     fun loadData() {
@@ -192,10 +220,17 @@ class LiveTVViewModel : ViewModel() {
 
     // ── Guide Grid Navigation ───────────────────────────────────────────────
 
-    fun navigateUp() {
+    /**
+     * UP in guide. Returns true if focus moved within rows; false if already at the top
+     * (caller should focus the category bar).
+     */
+    fun navigateUp(): Boolean {
         val s = _uiState.value
-        if (s.focusedRow > 0) {
+        return if (s.focusedRow > 0) {
             _uiState.value = s.copy(focusedRow = s.focusedRow - 1)
+            true
+        } else {
+            false
         }
     }
 
@@ -269,12 +304,12 @@ class LiveTVViewModel : ViewModel() {
         }
     }
 
-    /** Reset window so the leftmost slot is NOW. */
+    /** Reset window so the leftmost slot is the most recent 30-min mark before NOW. */
     fun resetTimeWindowToNow() {
         val now = System.currentTimeMillis() / 1000
         _uiState.value = _uiState.value.copy(
             focusTimeEpoch = now,
-            timeWindowStartEpoch = now
+            timeWindowStartEpoch = floorTo30Min(now)
         )
     }
 
@@ -300,6 +335,34 @@ class LiveTVViewModel : ViewModel() {
         }
     }
 
+    fun categoryNavigateLeft() {
+        val s = _uiState.value
+        if (s.selectedCategoryIndex > 0) {
+            _uiState.value = s.copy(
+                selectedCategoryIndex = s.selectedCategoryIndex - 1,
+                focusedRow = 0
+            )
+        }
+    }
+
+    fun categoryNavigateRight() {
+        val s = _uiState.value
+        if (s.selectedCategoryIndex < s.categories.size - 1) {
+            _uiState.value = s.copy(
+                selectedCategoryIndex = s.selectedCategoryIndex + 1,
+                focusedRow = 0
+            )
+        }
+    }
+
+    fun focusCategories() {
+        _uiState.value = _uiState.value.copy(categoriesFocused = true)
+    }
+
+    fun unfocusCategories() {
+        _uiState.value = _uiState.value.copy(categoriesFocused = false)
+    }
+
     // ── Mode transitions ────────────────────────────────────────────────────
 
     fun enterFullScreen() {
@@ -308,6 +371,17 @@ class LiveTVViewModel : ViewModel() {
             navRailVisible = false,
             showFullscreenOverlay = false
         )
+        pingNowPlayingBar()
+    }
+
+    /** Show the slim now-playing bar and (re)start the 5s auto-hide timer. */
+    fun pingNowPlayingBar() {
+        _uiState.value = _uiState.value.copy(nowPlayingBarVisible = true)
+        nowPlayingBarJob?.cancel()
+        nowPlayingBarJob = viewModelScope.launch {
+            delay(5000)
+            _uiState.value = _uiState.value.copy(nowPlayingBarVisible = false)
+        }
     }
 
     fun enterGuide() {
@@ -430,6 +504,21 @@ class LiveTVViewModel : ViewModel() {
             activePaneIndex = newPanes.size - 1,
             guideOverlayVisible = true
         )
+    }
+
+    /** Exit MultiView entirely and return to single-pane fullscreen on pane 0's channel. */
+    fun exitMultiView() {
+        val s = _uiState.value
+        val firstWithChannel = s.multiViewPanes.firstOrNull { it.channel != null }
+        _uiState.value = s.copy(
+            mode = ScreenMode.FULLSCREEN,
+            multiViewPanes = emptyList(),
+            currentChannel = firstWithChannel?.channel ?: s.currentChannel,
+            streamUrl = firstWithChannel?.streamUrl ?: s.streamUrl,
+            guideOverlayVisible = false,
+            activePaneIndex = 0
+        )
+        pingNowPlayingBar()
     }
 
     fun removeLastPane() {

@@ -58,10 +58,12 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import coil.compose.AsyncImage
 import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.ui.components.LoadingSpinner
+import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.LiveTVViewModel
 import com.airdvr.tv.ui.viewmodels.MultiViewNavDirection
@@ -216,27 +218,48 @@ private fun handleKey(
     onHome: () -> Unit
 ): Boolean {
     return when (uiState.mode) {
-        ScreenMode.GUIDE -> handleGuideKey(code, vm)
+        ScreenMode.GUIDE -> handleGuideKey(code, uiState, vm)
         ScreenMode.FULLSCREEN -> handleFullscreenKey(code, uiState, vm, onHome)
         ScreenMode.MULTIVIEW -> handleMultiViewKey(code, uiState, vm)
     }
 }
 
-private fun handleGuideKey(code: Int, vm: LiveTVViewModel): Boolean = when (code) {
-    KeyEvent.KEYCODE_DPAD_UP -> { vm.navigateUp(); true }
-    KeyEvent.KEYCODE_DPAD_DOWN -> { vm.navigateDown(); true }
-    KeyEvent.KEYCODE_DPAD_LEFT -> {
-        // If at leftmost, switch to fullscreen
-        val moved = vm.navigateLeft()
-        if (!moved) vm.enterFullScreen()
-        true
+private fun handleGuideKey(
+    code: Int,
+    uiState: com.airdvr.tv.ui.viewmodels.LiveTVUiState,
+    vm: LiveTVViewModel
+): Boolean {
+    if (uiState.categoriesFocused) {
+        return when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { vm.categoryNavigateLeft(); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.categoryNavigateRight(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                vm.unfocusCategories(); true
+            }
+            KeyEvent.KEYCODE_BACK -> { vm.unfocusCategories(); vm.enterFullScreen(); true }
+            else -> false
+        }
     }
-    KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.navigateRight(); true }
-    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.selectFocused(); true }
-    KeyEvent.KEYCODE_CHANNEL_UP -> { vm.channelUp(); true }
-    KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.channelDown(); true }
-    KeyEvent.KEYCODE_BACK -> { vm.enterFullScreen(); true }
-    else -> false
+    return when (code) {
+        KeyEvent.KEYCODE_DPAD_UP -> {
+            val moved = vm.navigateUp()
+            if (!moved) vm.focusCategories()
+            true
+        }
+        KeyEvent.KEYCODE_DPAD_DOWN -> { vm.navigateDown(); true }
+        KeyEvent.KEYCODE_DPAD_LEFT -> {
+            // If at leftmost, switch to fullscreen
+            val moved = vm.navigateLeft()
+            if (!moved) vm.enterFullScreen()
+            true
+        }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.navigateRight(); true }
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.selectFocused(); true }
+        KeyEvent.KEYCODE_CHANNEL_UP -> { vm.channelUp(); true }
+        KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.channelDown(); true }
+        KeyEvent.KEYCODE_BACK -> { vm.enterFullScreen(); true }
+        else -> false
+    }
 }
 
 private fun handleFullscreenKey(
@@ -252,6 +275,12 @@ private fun handleFullscreenKey(
             KeyEvent.KEYCODE_BACK -> { vm.hideNavRail(); true }
             else -> false
         }
+    }
+    // Any D-pad press in fullscreen pings the now playing bar
+    when (code) {
+        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> vm.pingNowPlayingBar()
     }
     // Fullscreen overlay (action buttons) visible
     if (uiState.showFullscreenOverlay) {
@@ -289,7 +318,7 @@ private fun handleMultiViewKey(
             KeyEvent.KEYCODE_DPAD_LEFT -> { vm.navigateLeft(); true }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.navigateRight(); true }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.tuneActivePaneToFocused(); true }
-            KeyEvent.KEYCODE_BACK -> { vm.hideGuideOverlay(); true }
+            KeyEvent.KEYCODE_BACK -> { vm.exitMultiView(); true }
             else -> false
         }
     }
@@ -301,7 +330,7 @@ private fun handleMultiViewKey(
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.addPaneForPick(); true }
         KeyEvent.KEYCODE_CHANNEL_UP -> { vm.channelUp(); true }
         KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.channelDown(); true }
-        KeyEvent.KEYCODE_BACK -> { vm.removeLastPane(); true }
+        KeyEvent.KEYCODE_BACK -> { vm.exitMultiView(); true }
         else -> false
     }
 }
@@ -361,6 +390,7 @@ private fun GuideLayout(
                 CategoryTabs(
                     categories = uiState.categories,
                     selectedIndex = uiState.selectedCategoryIndex,
+                    isFocused = uiState.categoriesFocused,
                     modifier = Modifier.fillMaxWidth()
                 )
                 GuideGrid(uiState = uiState, now = now, modifier = Modifier.fillMaxWidth().weight(1f))
@@ -398,6 +428,7 @@ private fun LeftInfoPanel(
     modifier: Modifier = Modifier
 ) {
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val posterUrl = rememberPosterUrl(focusedProgram?.title)
 
     Column(modifier = modifier) {
         // TOP HALF
@@ -409,8 +440,29 @@ private fun LeftInfoPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (focusedChannel != null) {
-                // Logo (circle abbrev fallback)
-                ChannelLogo(focusedChannel)
+                // Poster (80x120) — falls back to channel logo abbrev when missing
+                Box(
+                    modifier = Modifier
+                        .size(width = 80.dp, height = 120.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(PlexCard)
+                        .border(1.dp, PlexBorder, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!posterUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = posterUrl,
+                            contentDescription = focusedProgram?.title,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp))
+                        )
+                    } else {
+                        Text(
+                            (focusedChannel.guideName ?: "").take(3).uppercase(),
+                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            color = PlexTextPrimary, textAlign = TextAlign.Center
+                        )
+                    }
+                }
 
                 Spacer(Modifier.height(4.dp))
 
@@ -435,22 +487,33 @@ private fun LeftInfoPanel(
                         fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
                         maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
-                    val parts = mutableListOf<String>()
-                    focusedProgram.episodeTitle?.let { if (it.isNotBlank()) parts.add(it) }
+                    // Episode info — own line, 13sp, 1 line
+                    val episode = focusedProgram.episodeTitle?.takeIf { it.isNotBlank() }
+                    if (episode != null) {
+                        Text(
+                            episode,
+                            fontSize = 13.sp, color = PlexTextSecondary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    // Category · time — 12sp, 1 line
+                    val catTimeParts = mutableListOf<String>()
+                    focusedProgram.category?.let { if (it.isNotBlank()) catTimeParts.add(it) }
                     val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
                     val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
-                    parts.add("$s - $e")
-                    focusedProgram.category?.let { if (it.isNotBlank()) parts.add(it) }
-                    if (focusedProgram.isNew) parts.add("NEW")
+                    catTimeParts.add("$s - $e")
+                    if (focusedProgram.isNew) catTimeParts.add("NEW")
                     Text(
-                        parts.joinToString("  ·  "),
-                        fontSize = 13.sp, color = PlexTextSecondary
+                        catTimeParts.joinToString("  ·  "),
+                        fontSize = 12.sp, color = PlexTextSecondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
+                    // Description — 12sp, 5 lines
                     if (!focusedProgram.summary.isNullOrBlank()) {
                         Text(
                             focusedProgram.summary,
                             fontSize = 12.sp, color = PlexTextSecondary,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis
+                            maxLines = 5, overflow = TextOverflow.Ellipsis
                         )
                     }
                 } else {
@@ -464,18 +527,6 @@ private fun LeftInfoPanel(
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun ChannelLogo(channel: Channel) {
-    val abbrev = (channel.guideName ?: "").take(3).uppercase()
-    Box(
-        Modifier.size(48.dp).clip(CircleShape).background(PlexCard).border(1.dp, PlexBorder, CircleShape),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(abbrev, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
-    }
-}
-
 // ─── Category Tabs ─────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -483,6 +534,7 @@ private fun ChannelLogo(channel: Channel) {
 private fun CategoryTabs(
     categories: List<String>,
     selectedIndex: Int,
+    isFocused: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     LazyRow(
@@ -490,15 +542,23 @@ private fun CategoryTabs(
         horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         itemsIndexed(categories) { index, category ->
+            val isSelected = index == selectedIndex
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     category, fontSize = 13.sp,
-                    fontWeight = if (index == selectedIndex) FontWeight.Medium else FontWeight.Normal,
-                    color = if (index == selectedIndex) PlexTextPrimary else PlexTextTertiary
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = when {
+                        isSelected && isFocused -> PlexAccent
+                        isSelected -> PlexTextPrimary
+                        else -> PlexTextTertiary
+                    }
                 )
-                if (index == selectedIndex) {
+                if (isSelected) {
                     Spacer(Modifier.height(3.dp))
-                    Box(Modifier.width(28.dp).height(2.dp).background(PlexTextPrimary, RoundedCornerShape(1.dp)))
+                    Box(
+                        Modifier.width(28.dp).height(2.dp)
+                            .background(if (isFocused) PlexAccent else PlexTextPrimary, RoundedCornerShape(1.dp))
+                    )
                 }
             }
         }
@@ -522,23 +582,50 @@ private fun GuideGrid(
         if (uiState.focusedRow in filtered.indices) listState.animateScrollToItem(uiState.focusedRow.coerceAtLeast(0))
     }
 
+    if (filtered.isEmpty()) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text(
+                "No channels in this category",
+                fontSize = 14.sp, color = PlexTextTertiary
+            )
+        }
+        return
+    }
+
     Column(modifier = modifier) {
         TimeHeader(
             timeWindowStart = uiState.timeWindowStartEpoch,
             visibleDurationSec = uiState.visibleDurationSec,
             now = now, timeFormat = timeFormat
         )
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-            itemsIndexed(filtered) { rowIndex, channel ->
-                GuideRow(
-                    channel = channel,
-                    programs = uiState.programsByChannel[channel.guideNumber ?: ""] ?: emptyList(),
-                    isFocusedRow = rowIndex == uiState.focusedRow,
-                    isPlayingChannel = channel.guideNumber == uiState.currentChannel?.guideNumber,
-                    focusTimeEpoch = uiState.focusTimeEpoch,
-                    timeWindowStart = uiState.timeWindowStartEpoch,
-                    visibleDurationSec = uiState.visibleDurationSec,
-                    now = now, timeFormat = timeFormat
+        // Box wraps LazyColumn so the NOW indicator line can be overlaid
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+                itemsIndexed(filtered) { rowIndex, channel ->
+                    GuideRow(
+                        channel = channel,
+                        programs = uiState.programsByChannel[channel.guideNumber ?: ""] ?: emptyList(),
+                        isFocusedRow = rowIndex == uiState.focusedRow,
+                        isPlayingChannel = channel.guideNumber == uiState.currentChannel?.guideNumber,
+                        focusTimeEpoch = uiState.focusTimeEpoch,
+                        timeWindowStart = uiState.timeWindowStartEpoch,
+                        visibleDurationSec = uiState.visibleDurationSec,
+                        now = now, timeFormat = timeFormat
+                    )
+                }
+            }
+            // NOW indicator: vertical line at actual current time, offset by channel column width
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val totalW = maxWidth - CH_COL_DP.dp
+                val nowFrac = ((now - uiState.timeWindowStartEpoch).toFloat()
+                    / uiState.visibleDurationSec).coerceIn(0f, 1f)
+                val nowOffset = CH_COL_DP.dp + totalW * nowFrac
+                Box(
+                    modifier = Modifier
+                        .offset(x = nowOffset)
+                        .width(2.dp)
+                        .fillMaxHeight()
+                        .background(LiveRedDot)
                 )
             }
         }
@@ -560,13 +647,12 @@ private fun TimeHeader(
             Row(Modifier.fillMaxSize()) {
                 for (i in 0 until slotCount) {
                     val slotStart = timeWindowStart + i * SLOT_SEC
-                    val isNow = i == 0
                     Box(Modifier.width(slotW).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                         Text(
-                            if (isNow) "NOW" else timeFormat.format(Date(slotStart * 1000)),
+                            timeFormat.format(Date(slotStart * 1000)),
                             fontSize = 11.sp,
-                            fontWeight = if (isNow) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isNow) PlexTextPrimary else PlexTextTertiary,
+                            fontWeight = FontWeight.Normal,
+                            color = PlexTextTertiary,
                             modifier = Modifier.padding(start = 6.dp)
                         )
                     }
@@ -594,7 +680,7 @@ private fun GuideRow(
             val windowEnd = timeWindowStart + visibleDurationSec
             val sorted = programs.sortedBy { it.startEpochSec }
             // Trim past shows: only programs that end after NOW
-            val visible = sorted.filter { it.endEpochSec > timeWindowStart && it.startEpochSec < windowEnd }
+            val visible = sorted.filter { it.endEpochSec > now && it.startEpochSec < windowEnd }
 
             if (visible.isEmpty()) {
                 Box(
@@ -715,12 +801,18 @@ private fun FullscreenLayout(
             }
         }
 
-        // Always-visible slim bottom bar (32dp)
-        SlimNowPlayingBar(
-            channel = uiState.currentChannel,
-            program = uiState.currentProgram,
+        // Slim bottom bar (32dp) — auto-hides after 5s
+        AnimatedVisibility(
+            visible = uiState.nowPlayingBarVisible,
+            enter = fadeIn(tween(300)),
+            exit = fadeOut(tween(300)),
             modifier = Modifier.align(Alignment.BottomCenter)
-        )
+        ) {
+            SlimNowPlayingBar(
+                channel = uiState.currentChannel,
+                program = uiState.currentProgram
+            )
+        }
 
         // UP overlay — translucent bottom 40% with action buttons + show details + artwork
         AnimatedVisibility(
@@ -923,60 +1015,92 @@ private fun MultiViewLayout(
         val panes = uiState.multiViewPanes
         when (panes.size) {
             2 -> Row(Modifier.fillMaxSize()) {
-                repeat(2) { i -> MultiViewPane(panes[i], exoPlayers[i], uiState.activePaneIndex == i, i, Modifier.weight(1f).fillMaxHeight()) }
+                repeat(2) { i ->
+                    MultiViewPane(
+                        pane = panes[i], exoPlayer = exoPlayers[i],
+                        isActive = uiState.activePaneIndex == i, index = i,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == i,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                }
             }
             3 -> Row(Modifier.fillMaxSize()) {
-                MultiViewPane(panes[0], exoPlayers[0], uiState.activePaneIndex == 0, 0, Modifier.weight(1f).fillMaxHeight())
+                MultiViewPane(
+                    pane = panes[0], exoPlayer = exoPlayers[0],
+                    isActive = uiState.activePaneIndex == 0, index = 0,
+                    showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 0,
+                    uiState = uiState, now = now,
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                )
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    MultiViewPane(panes[1], exoPlayers[1], uiState.activePaneIndex == 1, 1, Modifier.weight(1f).fillMaxWidth())
-                    MultiViewPane(panes[2], exoPlayers[2], uiState.activePaneIndex == 2, 2, Modifier.weight(1f).fillMaxWidth())
+                    MultiViewPane(
+                        pane = panes[1], exoPlayer = exoPlayers[1],
+                        isActive = uiState.activePaneIndex == 1, index = 1,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 1,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    )
+                    MultiViewPane(
+                        pane = panes[2], exoPlayer = exoPlayers[2],
+                        isActive = uiState.activePaneIndex == 2, index = 2,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 2,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxWidth()
+                    )
                 }
             }
             4 -> Column(Modifier.fillMaxSize()) {
                 Row(Modifier.weight(1f)) {
-                    MultiViewPane(panes[0], exoPlayers[0], uiState.activePaneIndex == 0, 0, Modifier.weight(1f).fillMaxHeight())
-                    MultiViewPane(panes[1], exoPlayers[1], uiState.activePaneIndex == 1, 1, Modifier.weight(1f).fillMaxHeight())
+                    MultiViewPane(
+                        pane = panes[0], exoPlayer = exoPlayers[0],
+                        isActive = uiState.activePaneIndex == 0, index = 0,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 0,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                    MultiViewPane(
+                        pane = panes[1], exoPlayer = exoPlayers[1],
+                        isActive = uiState.activePaneIndex == 1, index = 1,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 1,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
                 }
                 Row(Modifier.weight(1f)) {
-                    MultiViewPane(panes[2], exoPlayers[2], uiState.activePaneIndex == 2, 2, Modifier.weight(1f).fillMaxHeight())
-                    MultiViewPane(panes[3], exoPlayers[3], uiState.activePaneIndex == 3, 3, Modifier.weight(1f).fillMaxHeight())
+                    MultiViewPane(
+                        pane = panes[2], exoPlayer = exoPlayers[2],
+                        isActive = uiState.activePaneIndex == 2, index = 2,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 2,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
+                    MultiViewPane(
+                        pane = panes[3], exoPlayer = exoPlayers[3],
+                        isActive = uiState.activePaneIndex == 3, index = 3,
+                        showPickerOverlay = uiState.guideOverlayVisible && uiState.activePaneIndex == 3,
+                        uiState = uiState, now = now,
+                        modifier = Modifier.weight(1f).fillMaxHeight()
+                    )
                 }
             }
             else -> {}
-        }
-
-        // Guide overlay — for picking the channel for the active pane
-        AnimatedVisibility(
-            visible = uiState.guideOverlayVisible,
-            enter = slideInVertically(tween(250)) { it / 2 } + fadeIn(tween(250)),
-            exit = slideOutVertically(tween(200)) { it / 2 } + fadeOut(tween(200)),
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f))) {
-                Column(Modifier.fillMaxSize()) {
-                    Box(
-                        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)
-                    ) {
-                        Text(
-                            "Pick a channel for pane ${uiState.activePaneIndex + 1}",
-                            fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary
-                        )
-                    }
-                    CategoryTabs(
-                        categories = uiState.categories,
-                        selectedIndex = uiState.selectedCategoryIndex,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    GuideGrid(uiState = uiState, now = now, modifier = Modifier.fillMaxWidth().weight(1f))
-                }
-            }
         }
     }
 }
 
 @OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
 @Composable
-private fun MultiViewPane(pane: PaneState, exoPlayer: ExoPlayer, isActive: Boolean, index: Int, modifier: Modifier = Modifier) {
+private fun MultiViewPane(
+    pane: PaneState,
+    exoPlayer: ExoPlayer,
+    isActive: Boolean,
+    index: Int,
+    showPickerOverlay: Boolean,
+    uiState: com.airdvr.tv.ui.viewmodels.LiveTVUiState,
+    now: Long,
+    modifier: Modifier = Modifier
+) {
     Box(
         modifier = modifier.padding(1.dp)
             .border(if (isActive) 2.dp else 0.dp, if (isActive) PlexTextPrimary else Color.Transparent)
@@ -1009,6 +1133,43 @@ private fun MultiViewPane(pane: PaneState, exoPlayer: ExoPlayer, isActive: Boole
                     Icon(Icons.Filled.Add, null, tint = PlexBorder, modifier = Modifier.size(40.dp))
                     Spacer(Modifier.height(8.dp))
                     Text("Pick a channel", color = PlexTextTertiary, fontSize = 13.sp)
+                }
+            }
+        }
+
+        // Pane-local picker overlay: dark scrim + "Select a channel" header + guide grid at bottom
+        if (showPickerOverlay) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.85f))) {
+                // Header text — top
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Select a channel",
+                        fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary
+                    )
+                }
+                // Guide grid + categories — bottom 60%
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.65f)
+                ) {
+                    CategoryTabs(
+                        categories = uiState.categories,
+                        selectedIndex = uiState.selectedCategoryIndex,
+                        isFocused = uiState.categoriesFocused,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    GuideGrid(
+                        uiState = uiState, now = now,
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    )
                 }
             }
         }

@@ -29,9 +29,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
+import coil.compose.AsyncImage
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.Recording
+import com.airdvr.tv.ui.components.rememberBackdropUrl
+import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.HomeViewModel
 import com.airdvr.tv.ui.viewmodels.LiveChannelEntry
@@ -90,7 +93,7 @@ fun HomeScreen(
                             RowSection(title = "Live Now") {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 24.dp)
+                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp)
                                 ) {
                                     items(uiState.liveNow) { entry ->
                                         LiveNowCard(entry = entry, onClick = onNavigateLiveTV)
@@ -105,7 +108,7 @@ fun HomeScreen(
                             RowSection(title = "Recordings") {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 24.dp)
+                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp)
                                 ) {
                                     items(uiState.recordings) { recording ->
                                         RecordingPosterCard(
@@ -123,7 +126,7 @@ fun HomeScreen(
                             RowSection(title = "Upcoming") {
                                 LazyRow(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(horizontal = 24.dp)
+                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp)
                                 ) {
                                     items(uiState.upcoming) { entry ->
                                         UpcomingCard(entry = entry, onClick = onNavigateLiveTV)
@@ -143,17 +146,26 @@ fun HomeScreen(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
+    val backdropUrl = rememberBackdropUrl(program?.title)
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(280.dp)
     ) {
-        // Background — solid card color, no poster yet
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(PlexSurface)
-        )
+        // Background — backdrop image if available, otherwise solid card color
+        if (!backdropUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = backdropUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().background(PlexSurface)
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(PlexSurface)
+            )
+        }
         // Bottom-up gradient
         Box(
             modifier = Modifier
@@ -223,6 +235,7 @@ private fun LiveNowCard(entry: LiveChannelEntry, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "lns")
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+    val backdropUrl = rememberBackdropUrl(entry.program?.title)
 
     Surface(
         onClick = onClick,
@@ -241,44 +254,63 @@ private fun LiveNowCard(entry: LiveChannelEntry, onClick: () -> Unit) {
             focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
         )
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Logo abbrev
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Backdrop background (if available)
+            if (!backdropUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = backdropUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize()
+                )
                 Box(
-                    Modifier.size(28.dp).clip(CircleShape).background(PlexSurface).border(1.dp, PlexBorder, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Logo abbrev (fallback)
+                    Box(
+                        Modifier.size(28.dp).clip(CircleShape).background(PlexSurface).border(1.dp, PlexBorder, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            (entry.channel.guideName ?: "").take(2).uppercase(),
+                            fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                        )
+                    }
                     Text(
-                        (entry.channel.guideName ?: "").take(2).uppercase(),
-                        fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                        "${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
+                        fontSize = 11.sp, color = PlexTextSecondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                 }
                 Text(
-                    "${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
-                    fontSize = 11.sp, color = PlexTextSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    entry.program?.title ?: "No data",
+                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
-            }
-            Text(
-                entry.program?.title ?: "No data",
-                fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (entry.program != null) {
-                    val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
-                    val e = timeFormat.format(Date(entry.program.endEpochSec * 1000))
-                    Text("$s - $e", fontSize = 10.sp, color = PlexTextTertiary)
-                }
-                if (!entry.program?.category.isNullOrBlank()) {
-                    Box(
-                        Modifier.background(PlexSurface, RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(entry.program?.category ?: "", fontSize = 9.sp, color = PlexTextSecondary)
+                Spacer(Modifier.weight(1f))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (entry.program != null) {
+                        val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
+                        val e = timeFormat.format(Date(entry.program.endEpochSec * 1000))
+                        Text("$s - $e", fontSize = 10.sp, color = PlexTextTertiary)
+                    }
+                    if (!entry.program?.category.isNullOrBlank()) {
+                        Box(
+                            Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp)
+                        ) {
+                            Text(entry.program?.category ?: "", fontSize = 9.sp, color = PlexTextSecondary)
+                        }
                     }
                 }
             }

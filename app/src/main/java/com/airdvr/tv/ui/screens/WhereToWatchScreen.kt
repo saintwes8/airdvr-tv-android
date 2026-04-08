@@ -3,6 +3,9 @@ package com.airdvr.tv.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -14,7 +17,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -25,6 +31,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
+import coil.compose.AsyncImage
+import com.airdvr.tv.data.models.ArtworkItem
 import com.airdvr.tv.data.models.WatchProvider
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.WhereToWatchViewModel
@@ -101,17 +109,39 @@ fun WhereToWatchScreen(
                     )
                 }
                 uiState.query.isBlank() -> {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            Icons.Filled.Search, contentDescription = null,
-                            tint = PlexBorder, modifier = Modifier.size(64.dp)
+                    if (uiState.isLoadingPopular) {
+                        CircularProgressIndicator(
+                            color = PlexTextPrimary,
+                            modifier = Modifier.align(Alignment.Center).size(32.dp),
+                            strokeWidth = 2.dp
                         )
-                        Spacer(Modifier.height(16.dp))
-                        Text("Search for any show or movie", fontSize = 16.sp, color = PlexTextTertiary)
+                    } else if (uiState.popular.isEmpty()) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Search, contentDescription = null,
+                                tint = PlexBorder, modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("Search for any show or movie", fontSize = 16.sp, color = PlexTextTertiary)
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(uiState.popular) { item ->
+                                PopularPosterCard(item = item) {
+                                    item.title?.let { viewModel.searchTitle(it) }
+                                }
+                            }
+                        }
                     }
                 }
                 uiState.results.isEmpty() -> {
@@ -133,6 +163,61 @@ fun WhereToWatchScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PopularPosterCard(item: ArtworkItem, onClick: () -> Unit) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(2f / 3f)
+            .onFocusChanged { isFocused = it.isFocused },
+        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = CardDefaults.colors(
+            containerColor = PlexCard,
+            focusedContainerColor = PlexCard
+        ),
+        border = CardDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        )
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (!item.posterUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = item.posterUrl,
+                    contentDescription = item.title,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                )
+            } else {
+                Box(modifier = Modifier.fillMaxSize().background(PlexSurface))
+            }
+            // Bottom gradient for title legibility
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth().fillMaxHeight(0.5f)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                        )
+                    )
+            )
+            Text(
+                item.title ?: "",
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(10.dp)
+            )
         }
     }
 }
