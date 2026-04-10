@@ -451,15 +451,15 @@ private fun LeftInfoPanel(
     Column(
         modifier = modifier
             .verticalScroll(scrollState)
-            .padding(start = 24.dp, top = 32.dp, end = 16.dp, bottom = 8.dp)
+            .padding(start = 16.dp, top = 32.dp, end = 8.dp, bottom = 8.dp)
     ) {
         if (focusedChannel != null) {
             // Row: poster + info side by side
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Poster (140x210)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Poster (110x165)
                 Box(
                     modifier = Modifier
-                        .size(width = 140.dp, height = 210.dp)
+                        .size(width = 110.dp, height = 165.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(PlexCard)
                         .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
