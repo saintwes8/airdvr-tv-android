@@ -302,7 +302,7 @@ private fun DetailOverlay(
                 ) {
                     item {
                         Text(
-                            result.title ?: "Unknown",
+                            result.title ?: "",
                             fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
                             maxLines = 3, overflow = TextOverflow.Ellipsis
                         )
@@ -406,7 +406,7 @@ private fun ProviderChip(provider: Provider) {
             )
         }
         Text(
-            provider.name ?: "Unknown",
+            provider.name ?: "",
             fontSize = 13.sp, color = PlexTextPrimary,
             maxLines = 1
         )

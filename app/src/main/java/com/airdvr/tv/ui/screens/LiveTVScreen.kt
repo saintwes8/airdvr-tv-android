@@ -427,7 +427,7 @@ private fun GuideLayout(
                     Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRedDot))
                     Text(
                         "${uiState.currentChannel.guideNumber ?: ""} ${uiState.currentChannel.guideName ?: ""}",
-                        fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary
                     )
                 }
             }
@@ -484,7 +484,7 @@ private fun LeftInfoPanel(
                 // Info column
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        focusedProgram?.title ?: "No program data",
+                        focusedProgram?.title ?: "",
                         fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
                         maxLines = 3, overflow = TextOverflow.Ellipsis
                     )
@@ -650,7 +650,7 @@ private fun TimeHeader(
                     Box(Modifier.width(slotW).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
                         Text(
                             timeFormat.format(Date(slotStart * 1000)),
-                            fontSize = 11.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Normal,
                             color = PlexTextTertiary,
                             modifier = Modifier.padding(start = 6.dp)
@@ -690,7 +690,7 @@ private fun GuideRow(
                         .background(guideCellBg, RoundedCornerShape(4.dp))
                         .border(0.5.dp, PlexBorder, RoundedCornerShape(4.dp)),
                     contentAlignment = Alignment.CenterStart
-                ) { Text("No data", color = PlexTextTertiary, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
+                ) { Text("No data", color = PlexTextTertiary, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp)) }
             } else {
                 visible.forEachIndexed { programIndex, prog ->
                     key(prog.programId ?: "${channel.guideNumber}_${programIndex}") {
@@ -736,13 +736,13 @@ private fun GuideRow(
                                 )
                                 if (prog.isNew) {
                                     Box(Modifier.background(PlexTextPrimary, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                                        Text("NEW", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = PlexBg)
+                                        Text("NEW", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PlexBg)
                                     }
                                 }
                             }
                             Text(
                                 "${timeFormat.format(Date(prog.startEpochSec * 1000))} - ${timeFormat.format(Date(prog.endEpochSec * 1000))}",
-                                fontSize = 11.sp, color = PlexTextTertiary, maxLines = 1
+                                fontSize = 12.sp, color = PlexTextTertiary, maxLines = 1
                             )
                         }
                     }
@@ -784,11 +784,11 @@ private fun ChannelLabel(
                     contentScale = ContentScale.Fit
                 )
             } else {
-                Text(abbrev, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
+                Text(abbrev, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
             }
         }
         Text(
-            channel.guideNumber ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold,
+            channel.guideNumber ?: "", fontSize = 12.sp, fontWeight = FontWeight.Bold,
             color = if (isFocusedRow) PlexTextPrimary else PlexTextSecondary,
             maxLines = 1, textAlign = TextAlign.Center
         )
@@ -894,7 +894,7 @@ private fun SlimNowPlayingBar(
             )
             Text("|", color = PlexTextTertiary, fontSize = 12.sp)
             Text(
-                program?.title ?: "No data",
+                program?.title ?: "",
                 fontSize = 12.sp, color = PlexTextSecondary,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
@@ -902,7 +902,7 @@ private fun SlimNowPlayingBar(
             if (program != null) {
                 val s = timeFormat.format(Date(program.startEpochSec * 1000))
                 val e = timeFormat.format(Date(program.endEpochSec * 1000))
-                Text("$s - $e", fontSize = 11.sp, color = PlexTextTertiary)
+                Text("$s - $e", fontSize = 12.sp, color = PlexTextTertiary)
             }
         }
         if (program != null) {

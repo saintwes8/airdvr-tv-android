@@ -356,7 +356,7 @@ private fun ChannelCard(
                 } else {
                     Text(
                         (channel.guideName ?: "").take(2).uppercase(),
-                        fontSize = 7.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
                     )
                 }
             }
@@ -369,9 +369,9 @@ private fun ChannelCard(
                 verticalArrangement = Arrangement.spacedBy(3.dp)
             ) {
                 Text(
-                    program?.title ?: "No data",
+                    program?.title ?: "",
                     fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
                 if (program != null) {
                     val s = timeFormat.format(Date(program.startEpochSec * 1000))
@@ -387,7 +387,7 @@ private fun ChannelCard(
                             Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(3.dp))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
-                            Text(program?.category ?: "", fontSize = 10.sp, color = PlexTextSecondary)
+                            Text(program?.category ?: "", fontSize = 12.sp, color = PlexTextSecondary)
                         }
                     }
                     Text(
@@ -447,7 +447,7 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
                     .padding(10.dp)
             ) {
                 Text(
-                    recording.title ?: "Untitled",
+                    recording.title ?: "",
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
                     maxLines = 2, overflow = TextOverflow.Ellipsis
                 )

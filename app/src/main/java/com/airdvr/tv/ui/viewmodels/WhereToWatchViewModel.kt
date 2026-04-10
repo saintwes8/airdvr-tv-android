@@ -81,13 +81,13 @@ class WhereToWatchViewModel : ViewModel() {
             } else {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Search failed: ${resp.code()}"
+                    error = "Search unavailable right now"
                 )
             }
         } catch (e: Exception) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                error = "Network error: ${e.message}"
+                error = "Could not connect. Check your network."
             )
         }
     }

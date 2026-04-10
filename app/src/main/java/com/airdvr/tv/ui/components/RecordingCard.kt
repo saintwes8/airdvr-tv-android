@@ -71,15 +71,15 @@ fun RecordingCard(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    recording.title ?: "Untitled",
+                    recording.title ?: "",
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                     color = PlexTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
                 if (!recording.episodeTitle.isNullOrBlank()) {
                     Text(
                         recording.episodeTitle,
-                        fontSize = 11.sp, color = PlexTextSecondary,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                        fontSize = 12.sp, color = PlexTextSecondary,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
                 }
                 if (progress > 0f) {

@@ -166,7 +166,7 @@ fun PlayerScreen(
             Box(
                 modifier = Modifier.fillMaxSize().background(PlexBg.copy(alpha = 0.8f)),
                 contentAlignment = Alignment.Center
-            ) { Text("Error: ${uiState.error}", color = Color(0xFFEF4444), fontSize = 16.sp) }
+            ) { Text(uiState.error ?: "Something went wrong", color = PlexTextSecondary, fontSize = 16.sp) }
         }
 
         AnimatedVisibility(
@@ -219,9 +219,9 @@ private fun PlayerControls(
     ) {
         // Top: title
         Column(modifier = Modifier.align(Alignment.TopStart).padding(24.dp)) {
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (!episodeTitle.isNullOrBlank()) {
-                Text(episodeTitle, fontSize = 16.sp, color = PlexTextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(episodeTitle, fontSize = 16.sp, color = PlexTextSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
 
