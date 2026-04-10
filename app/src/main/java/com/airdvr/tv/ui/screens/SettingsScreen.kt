@@ -1,6 +1,9 @@
 package com.airdvr.tv.ui.screens
 
+import android.view.KeyEvent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
@@ -9,11 +12,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -63,40 +72,11 @@ fun SettingsScreen(
 
             // ── Tuner Status ──
             item { SectionLabel("TUNER STATUS") }
-            if (uiState.tuners.isEmpty()) {
-                item { SettingsRow("Tuners", "No tuners found") }
-            } else {
-                uiState.tuners.forEachIndexed { i, tuner ->
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Tuner ${i + 1}",
-                                fontSize = 15.sp, color = PlexTextPrimary
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            if (tuner.connected == true) Color(0xFF22C55E) else Color(0xFFEF4444)
-                                        )
-                                )
-                                Text(
-                                    if (tuner.connected == true) "Connected" else "Offline",
-                                    fontSize = 14.sp, color = PlexTextSecondary
-                                )
-                            }
-                        }
-                    }
-                }
+            item {
+                SettingsRow(
+                    "Tuner",
+                    "HDHomeRun FLEX DUO \u00B7 ${uiState.tunerTotal} tuners \u00B7 ${uiState.tunersInUse} in use"
+                )
             }
             item { Divider() }
 
@@ -112,8 +92,137 @@ fun SettingsScreen(
 
             // ── Playback ──
             item { SectionLabel("PLAYBACK") }
-            item { SettingsRow("Quality", uiState.selectedQuality) }
-            item { SettingsRow("Closed Captions", if (uiState.ccEnabled) "On" else "Off") }
+            item {
+                SettingsRow(
+                    "Quality",
+                    uiState.selectedQuality,
+                    onClick = { viewModel.cycleQuality() }
+                )
+            }
+            item { Divider() }
+
+            // ── Guide Appearance ──
+            item { SectionLabel("GUIDE APPEARANCE") }
+            // Opacity slider
+            item {
+                var isFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .focusable()
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                when (keyEvent.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        viewModel.setGuideOpacity((uiState.guideOpacity - 0.05f).coerceIn(0f, 1f))
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        viewModel.setGuideOpacity((uiState.guideOpacity + 0.05f).coerceIn(0f, 1f))
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
+                        .background(if (isFocused) PlexCard else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.width(2.dp).fillMaxHeight()
+                            .background(if (isFocused) PlexTextPrimary else Color.Transparent)
+                    )
+                    Row(
+                        modifier = Modifier.weight(1f).padding(vertical = 10.dp, horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Guide Opacity", fontSize = 15.sp, color = PlexTextPrimary)
+                        Slider(
+                            value = uiState.guideOpacity,
+                            onValueChange = { viewModel.setGuideOpacity(it) },
+                            modifier = Modifier.weight(1f).height(20.dp),
+                            valueRange = 0f..1f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = PlexTextPrimary,
+                                activeTrackColor = PlexTextPrimary,
+                                inactiveTrackColor = PlexBorder
+                            )
+                        )
+                        Text(
+                            "${(uiState.guideOpacity * 100).toInt()}%",
+                            fontSize = 14.sp, color = PlexTextSecondary,
+                            modifier = Modifier.width(40.dp),
+                            textAlign = TextAlign.End
+                        )
+                    }
+                }
+            }
+            // Color picker
+            item {
+                val colorOptions = listOf(
+                    "#21262D" to Color(0xFF21262D),
+                    "#1B2838" to Color(0xFF1B2838),
+                    "#1B3228" to Color(0xFF1B3228),
+                    "#28183B" to Color(0xFF28183B),
+                    "#000000" to Color(0xFF000000)
+                )
+                var isFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .focusable()
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                val hexList = colorOptions.map { it.first }
+                                val currentIdx = hexList.indexOf(uiState.guideColor).coerceAtLeast(0)
+                                when (keyEvent.nativeKeyEvent.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (currentIdx > 0) viewModel.setGuideColor(hexList[currentIdx - 1])
+                                        true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        if (currentIdx < hexList.size - 1) viewModel.setGuideColor(hexList[currentIdx + 1])
+                                        true
+                                    }
+                                    else -> false
+                                }
+                            } else false
+                        }
+                        .background(if (isFocused) PlexCard else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.width(2.dp).fillMaxHeight()
+                            .background(if (isFocused) PlexTextPrimary else Color.Transparent)
+                    )
+                    Row(
+                        modifier = Modifier.weight(1f).padding(vertical = 10.dp, horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Guide Color", fontSize = 15.sp, color = PlexTextPrimary)
+                        Spacer(Modifier.weight(1f))
+                        colorOptions.forEach { (hex, color) ->
+                            val selected = hex == uiState.guideColor
+                            Box(
+                                Modifier.size(28.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        if (selected) 2.dp else 1.dp,
+                                        if (selected) PlexTextPrimary else PlexBorder,
+                                        CircleShape
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
             item { Divider() }
 
             // ── About ──
@@ -124,13 +233,34 @@ fun SettingsScreen(
             // Sign Out
             item {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    "Sign Out",
-                    fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                    color = Color(0xFFEF4444),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
-                )
+                var isFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                        .onFocusChanged { isFocused = it.isFocused }
+                        .focusable()
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown &&
+                                (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
+                            ) { onLogout(); true } else false
+                        }
+                        .background(if (isFocused) PlexCard else Color.Transparent),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.width(2.dp).fillMaxHeight()
+                            .background(if (isFocused) PlexTextPrimary else Color.Transparent)
+                    )
+                    Text(
+                        "Sign Out",
+                        fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                        color = Color(0xFFEF4444),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.weight(1f).padding(vertical = 12.dp)
+                    )
+                }
             }
 
             item { Spacer(Modifier.height(32.dp)) }
@@ -150,14 +280,37 @@ private fun SectionLabel(label: String) {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun SettingsRow(label: String, value: String) {
+private fun SettingsRow(label: String, value: String, onClick: (() -> Unit)? = null) {
+    var isFocused by remember { mutableStateOf(false) }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable()
+            .then(
+                if (onClick != null) Modifier.onKeyEvent { keyEvent ->
+                    if (keyEvent.type == KeyEventType.KeyDown &&
+                        (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
+                    ) { onClick(); true } else false
+                } else Modifier
+            )
+            .background(if (isFocused) PlexCard else Color.Transparent),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, fontSize = 15.sp, color = PlexTextPrimary)
-        Text(value, fontSize = 14.sp, color = PlexTextSecondary)
+        Box(
+            Modifier.width(2.dp).fillMaxHeight()
+                .background(if (isFocused) PlexTextPrimary else Color.Transparent)
+        )
+        Row(
+            modifier = Modifier.weight(1f).padding(vertical = 10.dp, horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, fontSize = 15.sp, color = PlexTextPrimary)
+            Text(value, fontSize = 14.sp, color = PlexTextSecondary)
+        }
     }
 }
 

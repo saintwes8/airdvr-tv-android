@@ -4,9 +4,10 @@ import com.airdvr.tv.util.Constants
 
 class StreamRepository {
 
-    fun getStreamUrl(channelNumber: String?): String {
+    fun getStreamUrl(channelNumber: String?, quality: String? = null): String {
         if (channelNumber.isNullOrBlank()) return ""
-        return "${Constants.HLS_BASE_URL}${channelNumber}/playlist.m3u8"
+        val base = "${Constants.HLS_BASE_URL}${channelNumber}/playlist.m3u8"
+        return if (!quality.isNullOrBlank() && quality != "Auto") "$base?quality=$quality" else base
     }
 
     fun getRecordingStreamUrl(recordingId: String?): String {

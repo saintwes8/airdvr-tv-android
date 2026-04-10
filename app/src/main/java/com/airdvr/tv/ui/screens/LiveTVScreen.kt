@@ -27,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -45,6 +46,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -140,6 +142,14 @@ fun LiveTVScreen(
                 if (url == null) exoPlayers[i].stop()
             }
         }
+    }
+    // CC toggle
+    LaunchedEffect(uiState.ccEnabled) {
+        val params = exoPlayers[0].trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !uiState.ccEnabled)
+            .build()
+        exoPlayers[0].trackSelectionParameters = params
     }
     // Volume
     LaunchedEffect(uiState.activePaneIndex, uiState.mode, uiState.isMuted) {
@@ -496,15 +506,22 @@ private fun LeftInfoPanel(
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
-                    // Category · time — 12sp, 1 line
-                    val catTimeParts = mutableListOf<String>()
-                    focusedProgram.category?.let { if (it.isNotBlank()) catTimeParts.add(it) }
+                    // Genre
+                    val genreParts = mutableListOf<String>()
+                    focusedProgram.category?.let { if (it.isNotBlank()) genreParts.add(it) }
+                    if (focusedProgram.isNew) genreParts.add("NEW")
+                    if (genreParts.isNotEmpty()) {
+                        Text(
+                            genreParts.joinToString("  \u00B7  "),
+                            fontSize = 12.sp, color = PlexTextSecondary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    // Air time
                     val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
                     val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
-                    catTimeParts.add("$s - $e")
-                    if (focusedProgram.isNew) catTimeParts.add("NEW")
                     Text(
-                        catTimeParts.joinToString("  ·  "),
+                        "$s - $e",
                         fontSize = 12.sp, color = PlexTextSecondary,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
@@ -577,6 +594,13 @@ private fun GuideGrid(
     val filtered = uiState.filteredChannels
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val listState = rememberLazyListState()
+    val guideCellBg = remember(uiState.guideColorHex, uiState.guideOpacity) {
+        try {
+            Color(android.graphics.Color.parseColor(uiState.guideColorHex)).copy(alpha = uiState.guideOpacity)
+        } catch (_: Exception) {
+            Color(0xFF21262D).copy(alpha = uiState.guideOpacity)
+        }
+    }
 
     LaunchedEffect(uiState.focusedRow) {
         if (uiState.focusedRow in filtered.indices) listState.animateScrollToItem(uiState.focusedRow.coerceAtLeast(0))
@@ -610,7 +634,8 @@ private fun GuideGrid(
                         focusTimeEpoch = uiState.focusTimeEpoch,
                         timeWindowStart = uiState.timeWindowStartEpoch,
                         visibleDurationSec = uiState.visibleDurationSec,
-                        now = now, timeFormat = timeFormat
+                        now = now, timeFormat = timeFormat,
+                        guideCellBg = guideCellBg
                     )
                 }
             }
@@ -668,7 +693,8 @@ private fun GuideRow(
     channel: Channel, programs: List<EpgProgram>,
     isFocusedRow: Boolean, isPlayingChannel: Boolean,
     focusTimeEpoch: Long, timeWindowStart: Long, visibleDurationSec: Long,
-    now: Long, timeFormat: SimpleDateFormat
+    now: Long, timeFormat: SimpleDateFormat,
+    guideCellBg: Color
 ) {
     Row(modifier = Modifier.fillMaxWidth().height(ROW_DP.dp)) {
         // Channel label
@@ -685,12 +711,14 @@ private fun GuideRow(
             if (visible.isEmpty()) {
                 Box(
                     Modifier.fillMaxSize().padding(1.dp)
-                        .background(PlexCard.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                        .clipToBounds()
+                        .background(guideCellBg, RoundedCornerShape(4.dp))
                         .border(0.5.dp, PlexBorder, RoundedCornerShape(4.dp)),
                     contentAlignment = Alignment.CenterStart
                 ) { Text("No data", color = PlexTextTertiary, fontSize = 11.sp, modifier = Modifier.padding(start = 8.dp)) }
             } else {
-                visible.forEach { prog ->
+                visible.forEachIndexed { programIndex, prog ->
+                    key(prog.programId ?: "${channel.guideNumber}_${programIndex}") {
                     // Clip start to NOW so past portion is hidden
                     val cs = maxOf(prog.startEpochSec, timeWindowStart)
                     val ce = minOf(prog.endEpochSec, windowEnd)
@@ -704,8 +732,9 @@ private fun GuideRow(
                         modifier = Modifier
                             .offset(x = xOff).width(cellW).fillMaxHeight()
                             .padding(vertical = 2.dp, horizontal = 1.dp).scale(scale)
+                            .clipToBounds()
                             .background(
-                                PlexCard.copy(alpha = 0.70f),
+                                guideCellBg,
                                 RoundedCornerShape(4.dp)
                             )
                             .border(
@@ -740,6 +769,7 @@ private fun GuideRow(
                             )
                         }
                     }
+                    } // key
                 }
             }
         }
@@ -825,6 +855,7 @@ private fun FullscreenLayout(
                 channel = uiState.currentChannel,
                 program = uiState.currentProgram,
                 isMuted = uiState.isMuted,
+                ccEnabled = uiState.ccEnabled,
                 selectedIndex = uiState.actionButtonIndex
             )
         }
@@ -893,6 +924,7 @@ private fun FullscreenActionOverlay(
     channel: Channel?,
     program: EpgProgram?,
     isMuted: Boolean,
+    ccEnabled: Boolean,
     selectedIndex: Int
 ) {
     if (channel == null) return
@@ -920,6 +952,7 @@ private fun FullscreenActionOverlay(
                             if (isMuted) "Unmute" else "Mute", selectedIndex == 2
                         )
                         OverlayActionBtn(Icons.Filled.Settings, "Quality", selectedIndex == 3)
+                        OverlayActionBtn(Icons.Filled.ClosedCaption, if (ccEnabled) "CC On" else "CC Off", selectedIndex == 4)
                     }
 
                     // Show title

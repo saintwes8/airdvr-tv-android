@@ -30,6 +30,9 @@ data class TunerInfo(
 )
 
 data class TunersResponse(
+    @SerializedName("total") val total: Int = 2,
+    @SerializedName("recording") val recording: Int = 0,
+    @SerializedName("inUse") val inUse: Int = 0,
     @SerializedName("tuner_count") val tunerCount: Int = 0,
     @SerializedName("tuners") val tuners: List<TunerInfo> = emptyList()
 )

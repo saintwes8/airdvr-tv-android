@@ -70,7 +70,14 @@ data class LiveTVUiState(
     // Mute
     val isMuted: Boolean = false,
 
-    // Action overlay button navigation (4 buttons in fullscreen overlay)
+    // Closed captions
+    val ccEnabled: Boolean = false,
+
+    // Guide appearance
+    val guideOpacity: Float = 0.7f,
+    val guideColorHex: String = "#21262D",
+
+    // Action overlay button navigation (5 buttons in fullscreen overlay)
     val actionButtonIndex: Int = 0,
 
     // User profile
@@ -127,6 +134,7 @@ class LiveTVViewModel : ViewModel() {
     private val guideRepo = GuideRepository()
     private val streamRepo = StreamRepository()
     private val api = ApiClient.api
+    private val guidePrefsManager = AirDVRApp.instance.guidePreferencesManager
 
     private val _uiState = MutableStateFlow(LiveTVUiState())
     val uiState: StateFlow<LiveTVUiState> = _uiState.asStateFlow()
@@ -143,8 +151,21 @@ class LiveTVViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(
             focusTimeEpoch = now,
             timeWindowStartEpoch = windowStart,
-            userInitial = initial
+            userInitial = initial,
+            ccEnabled = guidePrefsManager.ccEnabled.value,
+            guideOpacity = guidePrefsManager.opacity.value,
+            guideColorHex = guidePrefsManager.color.value
         )
+        viewModelScope.launch {
+            guidePrefsManager.opacity.collect {
+                _uiState.value = _uiState.value.copy(guideOpacity = it)
+            }
+        }
+        viewModelScope.launch {
+            guidePrefsManager.color.collect {
+                _uiState.value = _uiState.value.copy(guideColorHex = it)
+            }
+        }
         loadData()
     }
 
@@ -166,7 +187,7 @@ class LiveTVViewModel : ViewModel() {
             try {
                 val resp = api.getTuners()
                 if (resp.isSuccessful) {
-                    val count = resp.body()?.tunerCount ?: 2
+                    val count = resp.body()?.total ?: 2
                     _uiState.value = _uiState.value.copy(tunerCount = count.coerceIn(1, 4))
                 }
             } catch (_: Exception) {}
@@ -201,7 +222,8 @@ class LiveTVViewModel : ViewModel() {
 
     private fun tuneToChannel(channel: Channel) {
         if (channel.guideNumber.isNullOrBlank()) return
-        val url = streamRepo.getStreamUrl(channel.guideNumber)
+        val quality = guidePrefsManager.quality.value
+        val url = streamRepo.getStreamUrl(channel.guideNumber, quality)
         _uiState.value = _uiState.value.copy(
             currentChannel = channel,
             streamUrl = url,
@@ -433,7 +455,7 @@ class LiveTVViewModel : ViewModel() {
 
     fun overlayNavigateRight() {
         val s = _uiState.value
-        if (s.actionButtonIndex < 3) {
+        if (s.actionButtonIndex < 4) {
             _uiState.value = s.copy(actionButtonIndex = s.actionButtonIndex + 1)
         }
         resetOverlayTimer()
@@ -456,12 +478,30 @@ class LiveTVViewModel : ViewModel() {
             }
             1 -> showToast("Recording coming soon")
             2 -> toggleMute()
-            3 -> showToast("Quality settings coming soon")
+            3 -> cycleQuality()
+            4 -> toggleCC()
         }
     }
 
     fun toggleMute() {
         _uiState.value = _uiState.value.copy(isMuted = !_uiState.value.isMuted)
+    }
+
+    fun toggleCC() {
+        guidePrefsManager.toggleCC()
+        _uiState.value = _uiState.value.copy(ccEnabled = guidePrefsManager.ccEnabled.value)
+    }
+
+    fun cycleQuality() {
+        val options = listOf("Auto", "1080p", "720p", "480p")
+        val current = guidePrefsManager.quality.value
+        val nextIndex = (options.indexOf(current) + 1) % options.size
+        val newQuality = options[nextIndex]
+        guidePrefsManager.setQuality(newQuality)
+        showToast("Quality: $newQuality")
+        val ch = _uiState.value.currentChannel ?: return
+        val url = streamRepo.getStreamUrl(ch.guideNumber, newQuality)
+        _uiState.value = _uiState.value.copy(streamUrl = url, isTuning = true)
     }
 
     // ── MultiView ───────────────────────────────────────────────────────────
@@ -594,7 +634,8 @@ class LiveTVViewModel : ViewModel() {
         val s = _uiState.value
         val channel = s.focusedChannel ?: return
         if (channel.guideNumber.isNullOrBlank()) return
-        val url = streamRepo.getStreamUrl(channel.guideNumber)
+        val quality = guidePrefsManager.quality.value
+        val url = streamRepo.getStreamUrl(channel.guideNumber, quality)
         val newPanes = s.multiViewPanes.toMutableList()
         val idx = s.activePaneIndex
         if (idx < newPanes.size) {
