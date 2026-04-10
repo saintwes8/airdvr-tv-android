@@ -40,7 +40,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -82,7 +85,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 64
+private const val CH_COL_DP = 56
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -453,10 +456,10 @@ private fun LeftInfoPanel(
         if (focusedChannel != null) {
             // Row: poster + info side by side
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Poster (100x150)
+                // Poster (140x210)
                 Box(
                     modifier = Modifier
-                        .size(width = 100.dp, height = 150.dp)
+                        .size(width = 140.dp, height = 210.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(PlexCard)
                         .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
@@ -482,13 +485,20 @@ private fun LeftInfoPanel(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         focusedProgram?.title ?: "No program data",
-                        fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
                         maxLines = 3, overflow = TextOverflow.Ellipsis
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "${focusedChannel.guideNumber ?: ""} ${focusedChannel.guideName ?: ""}",
-                        fontSize = 14.sp, color = PlexTextSecondary,
+                        buildAnnotatedString {
+                            withStyle(SpanStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)) {
+                                append(focusedChannel.guideNumber ?: "")
+                            }
+                            append(" ")
+                            withStyle(SpanStyle(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = PlexTextSecondary)) {
+                                append(focusedChannel.guideName ?: "")
+                            }
+                        },
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
                     if (focusedProgram != null) {
@@ -496,7 +506,7 @@ private fun LeftInfoPanel(
                         if (!focusedProgram.category.isNullOrBlank()) {
                             Text(
                                 focusedProgram.category,
-                                fontSize = 12.sp, color = PlexTextSecondary,
+                                fontSize = 14.sp, color = PlexTextSecondary,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
                             Spacer(Modifier.height(4.dp))
@@ -505,7 +515,7 @@ private fun LeftInfoPanel(
                         val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
                         Text(
                             "$s - $e",
-                            fontSize = 12.sp, color = PlexTextSecondary,
+                            fontSize = 14.sp, color = PlexTextSecondary,
                             maxLines = 1, overflow = TextOverflow.Ellipsis
                         )
                     }
@@ -754,7 +764,7 @@ private fun ChannelLabel(
     val abbrev = (channel.guideName ?: "").take(3).uppercase()
     val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
     Column(
-        modifier = modifier.padding(horizontal = 2.dp, vertical = 1.dp),
+        modifier = modifier.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
