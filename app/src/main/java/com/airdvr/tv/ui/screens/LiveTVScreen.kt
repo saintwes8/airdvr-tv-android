@@ -85,7 +85,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 44
+private const val CH_COL_DP = 40
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -694,10 +694,9 @@ private fun GuideRow(
             } else {
                 visible.forEachIndexed { programIndex, prog ->
                     key(prog.programId ?: "${channel.guideNumber}_${programIndex}") {
-                    // Clip start: currently airing shows clip to NOW, future shows clip to timeWindowStart
                     val isCurrentlyAiring = prog.startEpochSec <= now && now < prog.endEpochSec
-                    val clipStart = if (isCurrentlyAiring) maxOf(now, timeWindowStart) else timeWindowStart
-                    val cs = maxOf(prog.startEpochSec, clipStart)
+                    // Position: use program start or window start, whichever is later
+                    val cs = maxOf(prog.startEpochSec, timeWindowStart)
                     val ce = minOf(prog.endEpochSec, windowEnd)
                     val xOff = ((cs - timeWindowStart).toFloat() / visibleDurationSec * totalW).dp
                     val cellW = ((ce - cs).toFloat() / visibleDurationSec * totalW).dp.coerceAtLeast(36.dp)
@@ -765,7 +764,7 @@ private fun ChannelLabel(
     val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
     Column(
         modifier = modifier.padding(start = 0.dp, end = 2.dp, top = 1.dp, bottom = 1.dp),
-        horizontalAlignment = Alignment.End,
+        horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
