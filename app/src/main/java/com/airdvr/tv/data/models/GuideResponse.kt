@@ -55,12 +55,60 @@ data class WatchProvider(
 
 data class ArtworkItem(
     @SerializedName("title") val title: String? = null,
-    @SerializedName("poster_url") val posterUrl: String? = null,
-    @SerializedName("backdrop_url") val backdropUrl: String? = null
+    @SerializedName("poster") val posterUrl: String? = null,
+    @SerializedName("backdrop") val backdropUrl: String? = null
 )
 
 data class ArtworkResponse(
     @SerializedName("title") val title: String? = null,
-    @SerializedName("poster_url") val posterUrl: String? = null,
-    @SerializedName("backdrop_url") val backdropUrl: String? = null
+    @SerializedName("poster") val posterUrl: String? = null,
+    @SerializedName("backdrop") val backdropUrl: String? = null,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("year") val year: String? = null,
+    @SerializedName("rating") val rating: String? = null,
+    @SerializedName("media_type") val mediaType: String? = null,
+    @SerializedName("tmdb_id") val tmdbId: String? = null
+)
+
+// ── Channel logo info (from /api/channels/logos) ──────────────────────────
+
+data class ChannelLogoInfo(
+    @SerializedName("network") val network: String? = null,
+    @SerializedName("logoUrl") val logoUrl: String? = null
+)
+
+// ── Find / Watch Providers models ─────────────────────────────────────────
+
+data class SearchResult(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("year") val year: String? = null,
+    @SerializedName("poster") val poster: String? = null,
+    @SerializedName("imdbID") val imdbID: String? = null,
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("backdrop") val backdrop: String? = null,
+    @SerializedName("tmdb_id") val tmdbId: Int? = null,
+    @SerializedName("media_type") val mediaType: String? = null,
+    @SerializedName("overview") val overview: String? = null,
+    @SerializedName("providers") val providers: TmdbProviders? = null
+)
+
+data class TmdbProviders(
+    @SerializedName("stream") val stream: List<Provider>? = null,
+    @SerializedName("rent") val rent: List<Provider>? = null,
+    @SerializedName("buy") val buy: List<Provider>? = null
+)
+
+data class Provider(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("logo") val logo: String? = null
+)
+
+data class WatchProvidersResponse(
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("results") val results: List<SearchResult>? = null
+)
+
+data class PopularArtworkResponse(
+    @SerializedName("results") val results: List<SearchResult>? = null,
+    @SerializedName("cached") val cached: Boolean? = null
 )

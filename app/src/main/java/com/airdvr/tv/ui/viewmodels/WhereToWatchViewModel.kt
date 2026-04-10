@@ -3,8 +3,8 @@ package com.airdvr.tv.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.data.api.ApiClient
-import com.airdvr.tv.data.models.ArtworkItem
-import com.airdvr.tv.data.models.WatchProvider
+import com.airdvr.tv.data.models.SearchResult
+import com.airdvr.tv.data.repository.ArtworkRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,16 +14,19 @@ import kotlinx.coroutines.launch
 
 data class WhereToWatchUiState(
     val query: String = "",
-    val results: List<WatchProvider> = emptyList(),
-    val popular: List<ArtworkItem> = emptyList(),
+    val results: List<SearchResult> = emptyList(),
+    val popular: List<SearchResult> = emptyList(),
+    val selectedResult: SearchResult? = null,
+    val detailResult: SearchResult? = null,
     val isLoading: Boolean = false,
     val isLoadingPopular: Boolean = false,
+    val isLoadingDetail: Boolean = false,
     val error: String? = null
 )
 
 class WhereToWatchViewModel : ViewModel() {
 
-    private val api = ApiClient.api
+    private val publicApi = ApiClient.publicApi
 
     private val _uiState = MutableStateFlow(WhereToWatchUiState())
     val uiState: StateFlow<WhereToWatchUiState> = _uiState.asStateFlow()
@@ -38,15 +41,8 @@ class WhereToWatchViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingPopular = true)
             try {
-                val resp = api.getPopularArtwork()
-                if (resp.isSuccessful) {
-                    _uiState.value = _uiState.value.copy(
-                        popular = resp.body() ?: emptyList(),
-                        isLoadingPopular = false
-                    )
-                } else {
-                    _uiState.value = _uiState.value.copy(isLoadingPopular = false)
-                }
+                val items = ArtworkRepository.fetchPopular()
+                _uiState.value = _uiState.value.copy(popular = items, isLoadingPopular = false)
             } catch (_: Exception) {
                 _uiState.value = _uiState.value.copy(isLoadingPopular = false)
             }
@@ -76,10 +72,10 @@ class WhereToWatchViewModel : ViewModel() {
     private suspend fun performSearch(query: String) {
         _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         try {
-            val resp = api.getWatchProviders(query)
+            val resp = publicApi.getWatchProviders(query)
             if (resp.isSuccessful) {
                 _uiState.value = _uiState.value.copy(
-                    results = resp.body() ?: emptyList(),
+                    results = resp.body()?.results ?: emptyList(),
                     isLoading = false
                 )
             } else {
@@ -94,5 +90,36 @@ class WhereToWatchViewModel : ViewModel() {
                 error = "Network error: ${e.message}"
             )
         }
+    }
+
+    fun selectResult(result: SearchResult) {
+        _uiState.value = _uiState.value.copy(
+            selectedResult = result,
+            detailResult = result,
+            isLoadingDetail = true
+        )
+        viewModelScope.launch {
+            try {
+                val resp = publicApi.getWatchProviders(result.title ?: "")
+                if (resp.isSuccessful) {
+                    val detailed = resp.body()?.results?.firstOrNull()
+                    _uiState.value = _uiState.value.copy(
+                        detailResult = detailed ?: result,
+                        isLoadingDetail = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isLoadingDetail = false)
+                }
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(isLoadingDetail = false)
+            }
+        }
+    }
+
+    fun clearSelection() {
+        _uiState.value = _uiState.value.copy(
+            selectedResult = null,
+            detailResult = null
+        )
     }
 }

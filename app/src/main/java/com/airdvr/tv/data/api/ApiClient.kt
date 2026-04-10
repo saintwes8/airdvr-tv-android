@@ -112,4 +112,19 @@ object ApiClient {
             .build()
             .create(AirDVRApi::class.java)
     }
+
+    /** Public API client without auth interceptors — for endpoints that don't require auth. */
+    val publicApi: AirDVRApi by lazy {
+        val publicClient = OkHttpClient.Builder()
+            .addInterceptor(loggingInterceptor)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+        Retrofit.Builder()
+            .baseUrl(Constants.BASE_URL)
+            .client(publicClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(AirDVRApi::class.java)
+    }
 }

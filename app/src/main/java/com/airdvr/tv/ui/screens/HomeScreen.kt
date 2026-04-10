@@ -1,5 +1,6 @@
 package com.airdvr.tv.ui.screens
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,7 @@ import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.HomeViewModel
 import com.airdvr.tv.ui.viewmodels.LiveChannelEntry
 import com.airdvr.tv.ui.viewmodels.UpcomingEntry
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -82,10 +85,14 @@ fun HomeScreen(
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
                     item {
-                        HeroBanner(
-                            channel = uiState.heroChannel,
-                            program = uiState.heroProgram
-                        )
+                        if (uiState.heroEntries.isNotEmpty()) {
+                            HeroCycling(entries = uiState.heroEntries)
+                        } else {
+                            HeroBanner(
+                                channel = uiState.heroChannel,
+                                program = uiState.heroProgram
+                            )
+                        }
                     }
 
                     if (uiState.liveNow.isNotEmpty()) {
@@ -209,6 +216,30 @@ private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
                 )
             }
         }
+    }
+}
+
+// ─── Hero cycling ──────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun HeroCycling(entries: List<LiveChannelEntry>) {
+    var heroIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(entries.size) {
+        if (entries.size <= 1) return@LaunchedEffect
+        while (true) {
+            delay(8000L)
+            heroIndex = (heroIndex + 1) % entries.size
+        }
+    }
+    val current = entries.getOrNull(heroIndex) ?: return
+    Crossfade(
+        targetState = heroIndex,
+        animationSpec = tween(500),
+        label = "heroCycle"
+    ) { idx ->
+        val entry = entries.getOrNull(idx) ?: return@Crossfade
+        HeroBanner(channel = entry.channel, program = entry.program)
     }
 }
 
@@ -406,22 +437,42 @@ private fun UpcomingCard(entry: UpcomingEntry, onClick: () -> Unit) {
             focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
         )
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                entry.program.title ?: "Untitled",
-                fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
-            )
-            Spacer(Modifier.weight(1f))
-            val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
-            Text(
-                "$s · ${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
-                fontSize = 11.sp, color = PlexTextTertiary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
+        val backdropUrl = rememberBackdropUrl(entry.program.title)
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (!backdropUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = backdropUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                )
+            }
+            Column(
+                modifier = Modifier.fillMaxSize().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(
+                    entry.program.title ?: "Untitled",
+                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.weight(1f))
+                val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
+                Text(
+                    "$s · ${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
+                    fontSize = 11.sp, color = PlexTextTertiary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

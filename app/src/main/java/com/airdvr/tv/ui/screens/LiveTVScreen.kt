@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.*
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -64,6 +65,7 @@ import coil.compose.AsyncImage
 import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.ui.components.LoadingSpinner
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
@@ -440,6 +442,8 @@ private fun LeftInfoPanel(
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val posterUrl = rememberPosterUrl(focusedProgram?.title)
 
+    val logoInfo = remember(focusedChannel?.guideName) { ChannelLogoRepository.getLogoInfo(focusedChannel?.guideName ?: "") }
+
     Column(modifier = modifier) {
         // TOP HALF
         Column(
@@ -450,91 +454,116 @@ private fun LeftInfoPanel(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             if (focusedChannel != null) {
-                // Poster (80x120) — falls back to channel logo abbrev when missing
-                Box(
-                    modifier = Modifier
-                        .size(width = 80.dp, height = 120.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(PlexCard)
-                        .border(1.dp, PlexBorder, RoundedCornerShape(6.dp)),
-                    contentAlignment = Alignment.Center
+                // Poster + channel info Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    if (!posterUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = posterUrl,
-                            contentDescription = focusedProgram?.title,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp))
-                        )
-                    } else {
-                        Text(
-                            (focusedChannel.guideName ?: "").take(3).uppercase(),
-                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                            color = PlexTextPrimary, textAlign = TextAlign.Center
-                        )
+                    // Poster (120x180) — falls back to channel logo abbrev when missing
+                    Box(
+                        modifier = Modifier
+                            .size(width = 120.dp, height = 180.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(PlexCard)
+                            .border(1.dp, PlexBorder, RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (!posterUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = posterUrl,
+                                contentDescription = focusedProgram?.title,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = logoInfo!!.logoUrl,
+                                contentDescription = focusedChannel.guideName,
+                                modifier = Modifier.size(60.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Text(
+                                (focusedChannel.guideName ?: "").take(3).uppercase(),
+                                fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                                color = PlexTextPrimary, textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+
+                    // Channel info column
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // Channel number + name with logo
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = logoInfo!!.logoUrl,
+                                    contentDescription = focusedChannel.guideName,
+                                    modifier = Modifier.size(20.dp).clip(RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                            Text(
+                                focusedChannel.guideNumber ?: "",
+                                fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                            )
+                            Text(
+                                focusedChannel.guideName ?: "",
+                                fontSize = 14.sp, color = PlexTextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        if (focusedProgram != null) {
+                            Text(
+                                focusedProgram.title ?: "Unknown",
+                                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis
+                            )
+                            // Episode info
+                            val episode = focusedProgram.episodeTitle?.takeIf { it.isNotBlank() }
+                            if (episode != null) {
+                                Text(
+                                    episode,
+                                    fontSize = 12.sp, color = PlexTextSecondary,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            // Genre
+                            val genreParts = mutableListOf<String>()
+                            focusedProgram.category?.let { if (it.isNotBlank()) genreParts.add(it) }
+                            if (focusedProgram.isNew) genreParts.add("NEW")
+                            if (genreParts.isNotEmpty()) {
+                                Text(
+                                    genreParts.joinToString("  \u00B7  "),
+                                    fontSize = 12.sp, color = PlexTextSecondary,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            // Air time
+                            val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
+                            val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
+                            Text(
+                                "$s - $e",
+                                fontSize = 12.sp, color = PlexTextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text("No program data", fontSize = 13.sp, color = PlexTextTertiary)
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(4.dp))
-
-                // Channel number + name
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Description — full width, below the Row
+                if (focusedProgram != null && !focusedProgram.summary.isNullOrBlank()) {
                     Text(
-                        focusedChannel.guideNumber ?: "",
-                        fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                        focusedProgram.summary,
+                        fontSize = 13.sp, color = PlexTextSecondary,
+                        maxLines = 8, overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        focusedChannel.guideName ?: "",
-                        fontSize = 16.sp, color = PlexTextSecondary,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                if (focusedProgram != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        focusedProgram.title ?: "Unknown",
-                        fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis
-                    )
-                    // Episode info — own line, 13sp, 1 line
-                    val episode = focusedProgram.episodeTitle?.takeIf { it.isNotBlank() }
-                    if (episode != null) {
-                        Text(
-                            episode,
-                            fontSize = 13.sp, color = PlexTextSecondary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    // Genre
-                    val genreParts = mutableListOf<String>()
-                    focusedProgram.category?.let { if (it.isNotBlank()) genreParts.add(it) }
-                    if (focusedProgram.isNew) genreParts.add("NEW")
-                    if (genreParts.isNotEmpty()) {
-                        Text(
-                            genreParts.joinToString("  \u00B7  "),
-                            fontSize = 12.sp, color = PlexTextSecondary,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    // Air time
-                    val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
-                    val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
-                    Text(
-                        "$s - $e",
-                        fontSize = 12.sp, color = PlexTextSecondary,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    // Description — 12sp, 5 lines
-                    if (!focusedProgram.summary.isNullOrBlank()) {
-                        Text(
-                            focusedProgram.summary,
-                            fontSize = 12.sp, color = PlexTextSecondary,
-                            maxLines = 5, overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                } else {
-                    Text("No program data", fontSize = 13.sp, color = PlexTextTertiary)
                 }
             }
         }
@@ -785,6 +814,7 @@ private fun ChannelLabel(
     modifier: Modifier = Modifier
 ) {
     val abbrev = (channel.guideName ?: "").take(3).uppercase()
+    val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
     Column(
         modifier = modifier.padding(horizontal = 2.dp, vertical = 1.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -798,7 +828,16 @@ private fun ChannelLabel(
             ),
             contentAlignment = Alignment.Center
         ) {
-            Text(abbrev, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
+            if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = logoInfo!!.logoUrl,
+                    contentDescription = channel.guideName,
+                    modifier = Modifier.size(24.dp).clip(CircleShape),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Text(abbrev, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
+            }
         }
         Text(
             channel.guideNumber ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold,
@@ -878,6 +917,8 @@ private fun SlimNowPlayingBar(
         ((now - program.startEpochSec).toFloat() / dur).coerceIn(0f, 1f)
     } else 0f
 
+    val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -889,6 +930,14 @@ private fun SlimNowPlayingBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = logoInfo!!.logoUrl,
+                    contentDescription = channel.guideName,
+                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(3.dp)),
+                    contentScale = ContentScale.Fit
+                )
+            }
             Text(
                 "${channel.guideNumber ?: ""} ${channel.guideName ?: ""}",
                 fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
@@ -982,7 +1031,7 @@ private fun FullscreenActionOverlay(
                     }
                 }
 
-                // Right column: artwork / network logo
+                // Right column: poster artwork / channel logo / fallback
                 Spacer(Modifier.width(24.dp))
                 Box(
                     modifier = Modifier
@@ -993,8 +1042,26 @@ private fun FullscreenActionOverlay(
                         .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    val abbrev = (channel.guideName ?: "").take(3).uppercase()
-                    Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+                    val posterUrl = rememberPosterUrl(program?.title)
+                    val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
+                    if (!posterUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = posterUrl,
+                            contentDescription = program?.title,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = logoInfo!!.logoUrl,
+                            contentDescription = channel.guideName,
+                            modifier = Modifier.size(64.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        val abbrev = (channel.guideName ?: "").take(3).uppercase()
+                        Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+                    }
                 }
             }
         }

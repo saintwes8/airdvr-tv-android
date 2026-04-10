@@ -6,6 +6,7 @@ import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.StreamRepository
 import kotlinx.coroutines.Job
@@ -183,6 +184,9 @@ class LiveTVViewModel : ViewModel() {
     fun loadData() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+
+            // Load channel logos in parallel
+            launch { ChannelLogoRepository.loadLogos() }
 
             try {
                 val resp = api.getTuners()

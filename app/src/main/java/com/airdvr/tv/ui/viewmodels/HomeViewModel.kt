@@ -6,6 +6,7 @@ import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.Recording
+import com.airdvr.tv.data.repository.ArtworkRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.RecordingsRepository
 import kotlinx.coroutines.async
@@ -28,6 +29,7 @@ data class HomeUiState(
     val isLoading: Boolean = true,
     val heroChannel: Channel? = null,
     val heroProgram: EpgProgram? = null,
+    val heroEntries: List<LiveChannelEntry> = emptyList(),
     val liveNow: List<LiveChannelEntry> = emptyList(),
     val recordings: List<Recording> = emptyList(),
     val upcoming: List<UpcomingEntry> = emptyList(),
@@ -80,6 +82,9 @@ class HomeViewModel : ViewModel() {
                     val hero = sorted.firstOrNull { it.favorite == true } ?: sorted.firstOrNull()
                     val heroProg = hero?.let { currentProgram(it) }
 
+                    // Hero cycling: first 10 live entries
+                    val heroEntries = liveNow.take(10)
+
                     val upcoming = sorted.flatMap { ch ->
                         val list = byChannel[ch.guideNumber ?: ""] ?: emptyList()
                         list.filter { it.startEpochSec in (now + 1)..twoHours }
@@ -89,9 +94,17 @@ class HomeViewModel : ViewModel() {
                     newState = newState.copy(
                         heroChannel = hero,
                         heroProgram = heroProg,
+                        heroEntries = heroEntries,
                         liveNow = liveNow,
                         upcoming = upcoming
                     )
+
+                    // Pre-fetch backdrops for hero entries
+                    heroEntries.forEach { entry ->
+                        entry.program?.title?.let { title ->
+                            launch { ArtworkRepository.fetchBackdrop(title) }
+                        }
+                    }
                 }.onFailure { e -> newState = newState.copy(error = e.message) }
 
                 recordingsResult.onSuccess { recordings ->
