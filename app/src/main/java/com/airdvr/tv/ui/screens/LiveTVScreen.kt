@@ -85,7 +85,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 50
+private const val CH_COL_DP = 44
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -459,7 +459,7 @@ private fun LeftInfoPanel(
                 // Poster (110x165)
                 Box(
                     modifier = Modifier
-                        .size(width = 110.dp, height = 165.dp)
+                        .size(width = 120.dp, height = 180.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(PlexCard)
                         .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
