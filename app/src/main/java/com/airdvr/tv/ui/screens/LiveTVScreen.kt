@@ -695,8 +695,13 @@ private fun GuideRow(
                 visible.forEachIndexed { programIndex, prog ->
                     key(prog.programId ?: "${channel.guideNumber}_${programIndex}") {
                     val isCurrentlyAiring = prog.startEpochSec <= now && now < prog.endEpochSec
-                    // Position: use program start or window start, whichever is later
-                    val cs = maxOf(prog.startEpochSec, timeWindowStart)
+                    // Currently airing: flush left (x=0). Future: snap to nearest slot boundary.
+                    val cs = if (isCurrentlyAiring) {
+                        timeWindowStart
+                    } else {
+                        val raw = maxOf(prog.startEpochSec, timeWindowStart)
+                        raw - (raw % SLOT_SEC) // snap down to slot boundary
+                    }
                     val ce = minOf(prog.endEpochSec, windowEnd)
                     val xOff = ((cs - timeWindowStart).toFloat() / visibleDurationSec * totalW).dp
                     val cellW = ((ce - cs).toFloat() / visibleDurationSec * totalW).dp.coerceAtLeast(36.dp)
