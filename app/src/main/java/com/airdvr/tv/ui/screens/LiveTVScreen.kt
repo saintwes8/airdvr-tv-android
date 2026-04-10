@@ -82,7 +82,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 80
+private const val CH_COL_DP = 64
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -451,82 +451,76 @@ private fun LeftInfoPanel(
             .padding(start = 24.dp, top = 32.dp, end = 16.dp, bottom = 8.dp)
     ) {
         if (focusedChannel != null) {
-            // Poster (120x180) — own row, stacked vertically
-            Box(
-                modifier = Modifier
-                    .size(width = 120.dp, height = 180.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(PlexCard)
-                    .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (!posterUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = posterUrl,
-                        contentDescription = focusedProgram?.title,
-                        modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Fit
-                    )
-                } else {
+            // Row: poster + info side by side
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Poster (100x150)
+                Box(
+                    modifier = Modifier
+                        .size(width = 100.dp, height = 150.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PlexCard)
+                        .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!posterUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = posterUrl,
+                            contentDescription = focusedProgram?.title,
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Fit
+                        )
+                    } else {
+                        Text(
+                            (focusedChannel.guideName ?: "").take(3).uppercase(),
+                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            color = PlexTextPrimary, textAlign = TextAlign.Center
+                        )
+                    }
+                }
+
+                // Info column
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        (focusedChannel.guideName ?: "").take(3).uppercase(),
-                        fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                        color = PlexTextPrimary, textAlign = TextAlign.Center
+                        focusedProgram?.title ?: "No program data",
+                        fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+                        maxLines = 3, overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${focusedChannel.guideNumber ?: ""} ${focusedChannel.guideName ?: ""}",
+                        fontSize = 14.sp, color = PlexTextSecondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    if (focusedProgram != null) {
+                        Spacer(Modifier.height(4.dp))
+                        if (!focusedProgram.category.isNullOrBlank()) {
+                            Text(
+                                focusedProgram.category,
+                                fontSize = 12.sp, color = PlexTextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
+                        val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
+                        Text(
+                            "$s - $e",
+                            fontSize = 12.sp, color = PlexTextSecondary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
-
-            // Show title
-            Text(
-                focusedProgram?.title ?: "No program data",
-                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
-                maxLines = 3, overflow = TextOverflow.Ellipsis
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            // Channel number + name
-            Text(
-                "${focusedChannel.guideNumber ?: ""} ${focusedChannel.guideName ?: ""}",
-                fontSize = 16.sp, color = PlexTextSecondary,
-                maxLines = 1, overflow = TextOverflow.Ellipsis
-            )
-
-            if (focusedProgram != null) {
-                Spacer(Modifier.height(6.dp))
-
-                // Genre
-                if (!focusedProgram.category.isNullOrBlank()) {
-                    Text(
-                        focusedProgram.category,
-                        fontSize = 13.sp, color = PlexTextSecondary,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(4.dp))
-                }
-
-                // Air time
-                val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
-                val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
-                Text(
-                    "$s - $e",
-                    fontSize = 13.sp, color = PlexTextSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-
+            // Description — full width below the row
+            if (focusedProgram != null && !focusedProgram.summary.isNullOrBlank()) {
                 Spacer(Modifier.height(10.dp))
-
-                // Description
-                if (!focusedProgram.summary.isNullOrBlank()) {
-                    Text(
-                        focusedProgram.summary,
-                        fontSize = 13.sp, color = PlexTextSecondary,
-                        maxLines = 15, overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
-                    )
-                }
+                Text(
+                    focusedProgram.summary,
+                    fontSize = 13.sp, color = PlexTextSecondary,
+                    maxLines = 12, overflow = TextOverflow.Ellipsis,
+                    lineHeight = 18.sp
+                )
             }
         }
     }
@@ -759,10 +753,10 @@ private fun ChannelLabel(
 ) {
     val abbrev = (channel.guideName ?: "").take(3).uppercase()
     val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
-    Row(
-        modifier = modifier.padding(start = 4.dp, end = 2.dp, top = 1.dp, bottom = 1.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    Column(
+        modifier = modifier.padding(horizontal = 2.dp, vertical = 1.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Box(
             Modifier.size(36.dp).clip(CircleShape).background(PlexSurface).border(
@@ -785,7 +779,8 @@ private fun ChannelLabel(
         }
         Text(
             channel.guideNumber ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (isFocusedRow) PlexTextPrimary else PlexTextSecondary
+            color = if (isFocusedRow) PlexTextPrimary else PlexTextSecondary,
+            maxLines = 1, textAlign = TextAlign.Center
         )
     }
 }
