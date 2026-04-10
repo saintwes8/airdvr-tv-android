@@ -85,7 +85,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 56
+private const val CH_COL_DP = 80
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -764,8 +764,8 @@ private fun ChannelLabel(
     val abbrev = (channel.guideName ?: "").take(3).uppercase()
     val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
     Column(
-        modifier = modifier.padding(start = 2.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier.padding(start = 2.dp, end = 4.dp, top = 1.dp, bottom = 1.dp),
+        horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
