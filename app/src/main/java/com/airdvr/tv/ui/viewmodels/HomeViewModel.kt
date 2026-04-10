@@ -78,18 +78,24 @@ class HomeViewModel : ViewModel() {
                         return list.firstOrNull { it.startEpochSec <= now && now < it.endEpochSec }
                     }
 
-                    val liveNow = sorted.take(15).map { ch -> LiveChannelEntry(ch, currentProgram(ch)) }
+                    val liveNow = sorted.take(30).map { ch -> LiveChannelEntry(ch, currentProgram(ch)) }
                     val hero = sorted.firstOrNull { it.favorite == true } ?: sorted.firstOrNull()
                     val heroProg = hero?.let { currentProgram(it) }
 
                     // Hero cycling: first 10 live entries
                     val heroEntries = liveNow.take(10)
 
-                    val upcoming = sorted.flatMap { ch ->
+                    val upcomingRaw = sorted.flatMap { ch ->
                         val list = byChannel[ch.guideNumber ?: ""] ?: emptyList()
                         list.filter { it.startEpochSec in (now + 1)..twoHours }
                             .map { UpcomingEntry(ch, it) }
-                    }.sortedBy { it.program.startEpochSec }.take(20)
+                    }.sortedBy { it.program.startEpochSec }
+                    // Deduplicate by show title
+                    val seenTitles = mutableSetOf<String>()
+                    val upcoming = upcomingRaw.filter { entry ->
+                        val title = entry.program.title ?: return@filter true
+                        seenTitles.add(title)
+                    }.take(30)
 
                     newState = newState.copy(
                         heroChannel = hero,

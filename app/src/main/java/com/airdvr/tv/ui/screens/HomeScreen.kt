@@ -35,6 +35,7 @@ import coil.compose.AsyncImage
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.Recording
+import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.ui.components.rememberBackdropUrl
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
@@ -154,6 +155,7 @@ fun HomeScreen(
 @Composable
 private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
     val backdropUrl = rememberBackdropUrl(program?.title)
+    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -164,7 +166,8 @@ private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
             AsyncImage(
                 model = backdropUrl,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize().background(PlexSurface)
+                modifier = Modifier.fillMaxSize().background(PlexSurface),
+                contentScale = ContentScale.Crop
             )
         } else {
             Box(
@@ -181,7 +184,7 @@ private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
                     Brush.verticalGradient(
                         colorStops = arrayOf(
                             0.0f to Color.Transparent,
-                            0.55f to PlexBg.copy(alpha = 0.40f),
+                            0.45f to PlexBg.copy(alpha = 0.50f),
                             1.0f to PlexBg
                         )
                     )
@@ -192,7 +195,7 @@ private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 32.dp, end = 32.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             if (channel != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -205,14 +208,25 @@ private fun HeroBanner(channel: Channel?, program: EpgProgram?) {
             }
             Text(
                 program?.title ?: channel?.guideName ?: "AirDVR",
-                fontSize = 36.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+                fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
                 maxLines = 2, overflow = TextOverflow.Ellipsis
             )
             if (program?.summary?.isNotBlank() == true) {
                 Text(
                     program.summary,
                     fontSize = 14.sp, color = PlexTextSecondary,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                    maxLines = 3, overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (program != null) {
+                val parts = mutableListOf<String>()
+                program.category?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
+                val s = timeFormat.format(Date(program.startEpochSec * 1000))
+                val e = timeFormat.format(Date(program.endEpochSec * 1000))
+                parts.add("$s - $e")
+                Text(
+                    parts.joinToString("  \u00B7  "),
+                    fontSize = 12.sp, color = PlexTextSecondary
                 )
             }
         }
@@ -228,7 +242,7 @@ private fun HeroCycling(entries: List<LiveChannelEntry>) {
     LaunchedEffect(entries.size) {
         if (entries.size <= 1) return@LaunchedEffect
         while (true) {
-            delay(8000L)
+            delay(10000L)
             heroIndex = (heroIndex + 1) % entries.size
         }
     }
@@ -263,16 +277,34 @@ private fun RowSection(title: String, content: @Composable () -> Unit) {
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun LiveNowCard(entry: LiveChannelEntry, onClick: () -> Unit) {
+    ChannelCard(
+        channel = entry.channel,
+        program = entry.program,
+        onClick = onClick,
+        label = "lns"
+    )
+}
+
+/** Shared card layout for Live Now and Upcoming rows */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ChannelCard(
+    channel: Channel,
+    program: EpgProgram?,
+    onClick: () -> Unit,
+    label: String
+) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "lns")
+    val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = label)
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-    val backdropUrl = rememberBackdropUrl(entry.program?.title)
+    val backdropUrl = rememberBackdropUrl(program?.title)
+    val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
 
     Surface(
         onClick = onClick,
         modifier = Modifier
             .width(220.dp)
-            .height(120.dp)
+            .height(130.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
@@ -286,12 +318,13 @@ private fun LiveNowCard(entry: LiveChannelEntry, onClick: () -> Unit) {
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Backdrop background (if available)
+            // Backdrop background
             if (!backdropUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = backdropUrl,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
                 )
                 Box(
                     modifier = Modifier
@@ -303,46 +336,65 @@ private fun LiveNowCard(entry: LiveChannelEntry, onClick: () -> Unit) {
                         )
                 )
             }
-            Column(
-                modifier = Modifier.fillMaxSize().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+            // Channel logo — top-left
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(PlexSurface.copy(alpha = 0.7f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // Logo abbrev (fallback)
-                    Box(
-                        Modifier.size(28.dp).clip(CircleShape).background(PlexSurface).border(1.dp, PlexBorder, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            (entry.channel.guideName ?: "").take(2).uppercase(),
-                            fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
-                        )
-                    }
+                if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = logoInfo!!.logoUrl,
+                        contentDescription = channel.guideName,
+                        modifier = Modifier.size(16.dp).clip(CircleShape),
+                        contentScale = ContentScale.Fit
+                    )
+                } else {
                     Text(
-                        "${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
-                        fontSize = 11.sp, color = PlexTextSecondary,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                        (channel.guideName ?: "").take(2).uppercase(),
+                        fontSize = 7.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
                     )
                 }
+            }
+            // Content overlay at bottom
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 Text(
-                    entry.program?.title ?: "No data",
+                    program?.title ?: "No data",
                     fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.weight(1f))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (entry.program != null) {
-                        val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
-                        val e = timeFormat.format(Date(entry.program.endEpochSec * 1000))
-                        Text("$s - $e", fontSize = 10.sp, color = PlexTextTertiary)
-                    }
-                    if (!entry.program?.category.isNullOrBlank()) {
+                if (program != null) {
+                    val s = timeFormat.format(Date(program.startEpochSec * 1000))
+                    val e = timeFormat.format(Date(program.endEpochSec * 1000))
+                    Text("$s - $e", fontSize = 12.sp, color = PlexTextSecondary)
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (!program?.category.isNullOrBlank()) {
                         Box(
-                            Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(3.dp)).padding(horizontal = 5.dp, vertical = 1.dp)
+                            Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(3.dp))
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
-                            Text(entry.program?.category ?: "", fontSize = 9.sp, color = PlexTextSecondary)
+                            Text(program?.category ?: "", fontSize = 10.sp, color = PlexTextSecondary)
                         }
                     }
+                    Text(
+                        "${channel.guideNumber ?: ""} ${channel.guideName ?: ""}",
+                        fontSize = 12.sp, color = PlexTextSecondary,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -416,65 +468,12 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun UpcomingCard(entry: UpcomingEntry, onClick: () -> Unit) {
-    var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "ucc")
-    val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-
-    Surface(
+    ChannelCard(
+        channel = entry.channel,
+        program = entry.program,
         onClick = onClick,
-        modifier = Modifier
-            .width(200.dp)
-            .height(110.dp)
-            .scale(scale)
-            .onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = PlexCard,
-            focusedContainerColor = PlexCard
-        ),
-        border = ClickableSurfaceDefaults.border(
-            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
-            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
-        )
-    ) {
-        val backdropUrl = rememberBackdropUrl(entry.program.title)
-        Box(modifier = Modifier.fillMaxSize()) {
-            if (!backdropUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = backdropUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
-                            )
-                        )
-                )
-            }
-            Column(
-                modifier = Modifier.fillMaxSize().padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Text(
-                    entry.program.title ?: "Untitled",
-                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.weight(1f))
-                val s = timeFormat.format(Date(entry.program.startEpochSec * 1000))
-                Text(
-                    "$s · ${entry.channel.guideNumber ?: ""} ${entry.channel.guideName ?: ""}",
-                    fontSize = 11.sp, color = PlexTextTertiary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-    }
+        label = "ucc"
+    )
 }
 
 // ─── Nav Rail ───────────────────────────────────────────────────────────────

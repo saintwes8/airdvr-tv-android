@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -80,7 +82,7 @@ import java.util.*
 // ─── Layout constants ──────────────────────────────────────────────────────
 private const val SLOT_SEC = 1800L
 private const val INFO_PANEL_DP = 280
-private const val CH_COL_DP = 60
+private const val CH_COL_DP = 80
 private const val ROW_DP = 56
 
 @OptIn(UnstableApi::class)
@@ -444,12 +446,15 @@ private fun LeftInfoPanel(
 
     val logoInfo = remember(focusedChannel?.guideName) { ChannelLogoRepository.getLogoInfo(focusedChannel?.guideName ?: "") }
 
+    val scrollState = rememberScrollState()
+
     Column(modifier = modifier) {
-        // TOP HALF
+        // TOP HALF — scrollable
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.5f)
+                .verticalScroll(scrollState)
                 .padding(start = 24.dp, top = 32.dp, end = 16.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -532,18 +537,15 @@ private fun LeftInfoPanel(
                                     maxLines = 1, overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            // Genre
-                            val genreParts = mutableListOf<String>()
-                            focusedProgram.category?.let { if (it.isNotBlank()) genreParts.add(it) }
-                            if (focusedProgram.isNew) genreParts.add("NEW")
-                            if (genreParts.isNotEmpty()) {
+                            // Genre — own line
+                            if (!focusedProgram.category.isNullOrBlank()) {
                                 Text(
-                                    genreParts.joinToString("  \u00B7  "),
+                                    focusedProgram.category,
                                     fontSize = 12.sp, color = PlexTextSecondary,
                                     maxLines = 1, overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            // Air time
+                            // Air time — own line
                             val s = timeFormat.format(Date(focusedProgram.startEpochSec * 1000))
                             val e = timeFormat.format(Date(focusedProgram.endEpochSec * 1000))
                             Text(
@@ -551,6 +553,14 @@ private fun LeftInfoPanel(
                                 fontSize = 12.sp, color = PlexTextSecondary,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis
                             )
+                            // NEW badge — own line
+                            if (focusedProgram.isNew) {
+                                Text(
+                                    "NEW",
+                                    fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                                    color = PlexTextPrimary
+                                )
+                            }
                         } else {
                             Text("No program data", fontSize = 13.sp, color = PlexTextTertiary)
                         }
@@ -561,8 +571,8 @@ private fun LeftInfoPanel(
                 if (focusedProgram != null && !focusedProgram.summary.isNullOrBlank()) {
                     Text(
                         focusedProgram.summary,
-                        fontSize = 13.sp, color = PlexTextSecondary,
-                        maxLines = 8, overflow = TextOverflow.Ellipsis
+                        fontSize = 12.sp, color = PlexTextSecondary,
+                        maxLines = 10, overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -651,35 +661,18 @@ private fun GuideGrid(
             visibleDurationSec = uiState.visibleDurationSec,
             now = now, timeFormat = timeFormat
         )
-        // Box wraps LazyColumn so the NOW indicator line can be overlaid
-        Box(modifier = Modifier.fillMaxSize()) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-                itemsIndexed(filtered) { rowIndex, channel ->
-                    GuideRow(
-                        channel = channel,
-                        programs = uiState.programsByChannel[channel.guideNumber ?: ""] ?: emptyList(),
-                        isFocusedRow = rowIndex == uiState.focusedRow,
-                        isPlayingChannel = channel.guideNumber == uiState.currentChannel?.guideNumber,
-                        focusTimeEpoch = uiState.focusTimeEpoch,
-                        timeWindowStart = uiState.timeWindowStartEpoch,
-                        visibleDurationSec = uiState.visibleDurationSec,
-                        now = now, timeFormat = timeFormat,
-                        guideCellBg = guideCellBg
-                    )
-                }
-            }
-            // NOW indicator: vertical line at actual current time, offset by channel column width
-            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                val totalW = maxWidth - CH_COL_DP.dp
-                val nowFrac = ((now - uiState.timeWindowStartEpoch).toFloat()
-                    / uiState.visibleDurationSec).coerceIn(0f, 1f)
-                val nowOffset = CH_COL_DP.dp + totalW * nowFrac
-                Box(
-                    modifier = Modifier
-                        .offset(x = nowOffset)
-                        .width(2.dp)
-                        .fillMaxHeight()
-                        .background(LiveRedDot)
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            itemsIndexed(filtered) { rowIndex, channel ->
+                GuideRow(
+                    channel = channel,
+                    programs = uiState.programsByChannel[channel.guideNumber ?: ""] ?: emptyList(),
+                    isFocusedRow = rowIndex == uiState.focusedRow,
+                    isPlayingChannel = channel.guideNumber == uiState.currentChannel?.guideNumber,
+                    focusTimeEpoch = uiState.focusTimeEpoch,
+                    timeWindowStart = uiState.timeWindowStartEpoch,
+                    visibleDurationSec = uiState.visibleDurationSec,
+                    now = now, timeFormat = timeFormat,
+                    guideCellBg = guideCellBg
                 )
             }
         }
@@ -815,13 +808,13 @@ private fun ChannelLabel(
 ) {
     val abbrev = (channel.guideName ?: "").take(3).uppercase()
     val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
-    Column(
-        modifier = modifier.padding(horizontal = 2.dp, vertical = 1.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    Row(
+        modifier = modifier.padding(start = 4.dp, end = 2.dp, top = 1.dp, bottom = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Box(
-            Modifier.size(30.dp).clip(CircleShape).background(PlexSurface).border(
+            Modifier.size(28.dp).clip(CircleShape).background(PlexSurface).border(
                 1.dp,
                 if (isPlayingChannel) PlexTextPrimary else PlexBorder,
                 CircleShape
@@ -832,16 +825,16 @@ private fun ChannelLabel(
                 AsyncImage(
                     model = logoInfo!!.logoUrl,
                     contentDescription = channel.guideName,
-                    modifier = Modifier.size(24.dp).clip(CircleShape),
+                    modifier = Modifier.size(22.dp).clip(CircleShape),
                     contentScale = ContentScale.Fit
                 )
             } else {
-                Text(abbrev, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
+                Text(abbrev, fontSize = 8.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary, textAlign = TextAlign.Center)
             }
         }
         Text(
             channel.guideNumber ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold,
-            color = if (isFocusedRow) PlexTextPrimary else PlexTextSecondary, textAlign = TextAlign.Center
+            color = if (isFocusedRow) PlexTextPrimary else PlexTextSecondary
         )
     }
 }
