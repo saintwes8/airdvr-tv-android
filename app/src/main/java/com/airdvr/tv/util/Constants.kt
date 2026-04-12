@@ -27,4 +27,5 @@ object Constants {
     const val ROUTE_PLAYER = "player/{recordingId}"
     const val ROUTE_SETTINGS = "settings"
     const val ROUTE_LOGIN = "login"
+    const val ROUTE_ZIP_CODE = "zip_code"
 }

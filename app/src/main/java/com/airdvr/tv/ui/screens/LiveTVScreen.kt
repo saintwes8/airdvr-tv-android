@@ -625,7 +625,8 @@ private fun GuideGrid(
                     timeWindowStart = uiState.timeWindowStartEpoch,
                     visibleDurationSec = uiState.visibleDurationSec,
                     now = now, timeFormat = timeFormat,
-                    guideCellBg = guideCellBg
+                    guideCellBg = guideCellBg,
+                    schedules = uiState.schedules
                 )
             }
         }
@@ -669,7 +670,8 @@ private fun GuideRow(
     isFocusedRow: Boolean, isPlayingChannel: Boolean,
     focusTimeEpoch: Long, timeWindowStart: Long, visibleDurationSec: Long,
     now: Long, timeFormat: SimpleDateFormat,
-    guideCellBg: Color
+    guideCellBg: Color,
+    schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList()
 ) {
     Row(modifier = Modifier.fillMaxWidth().height(ROW_DP.dp)) {
         // Channel label
@@ -728,6 +730,10 @@ private fun GuideRow(
                         if (isAiring) {
                             Box(Modifier.width(2.dp).fillMaxHeight().background(PlexTextPrimary).align(Alignment.CenterStart))
                         }
+                        val hasSchedule = schedules.any { s ->
+                            s.title == prog.title && s.channelNumber == prog.guideNumber
+                        }
+                        val isRecording = hasSchedule && isAiring
                         Column(
                             Modifier.fillMaxSize().padding(start = if (isAiring) 6.dp else 4.dp, end = 4.dp, top = 4.dp, bottom = 3.dp),
                             verticalArrangement = Arrangement.spacedBy(1.dp)
@@ -738,6 +744,15 @@ private fun GuideRow(
                                     color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
+                                if (hasSchedule) {
+                                    Box(
+                                        Modifier.size(8.dp).clip(CircleShape)
+                                            .then(
+                                                if (isRecording) Modifier.background(Color(0xFFEF4444))
+                                                else Modifier.border(1.5.dp, Color(0xFFEF4444), CircleShape)
+                                            )
+                                    )
+                                }
                                 if (prog.isNew) {
                                     Box(Modifier.background(PlexTextPrimary, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
                                         Text("NEW", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PlexBg)
@@ -848,7 +863,8 @@ private fun FullscreenLayout(
                 program = uiState.currentProgram,
                 isMuted = uiState.isMuted,
                 ccEnabled = uiState.ccEnabled,
-                selectedIndex = uiState.actionButtonIndex
+                selectedIndex = uiState.actionButtonIndex,
+                schedules = uiState.schedules
             )
         }
     }
@@ -927,7 +943,8 @@ private fun FullscreenActionOverlay(
     program: EpgProgram?,
     isMuted: Boolean,
     ccEnabled: Boolean,
-    selectedIndex: Int
+    selectedIndex: Int,
+    schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList()
 ) {
     if (channel == null) return
     Box(
@@ -946,9 +963,17 @@ private fun FullscreenActionOverlay(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Action buttons row
+                    val isRecording = program != null && schedules.any { s ->
+                        s.title == program.title && s.channelNumber == program.guideNumber
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         OverlayActionBtn(Icons.Filled.GridView, "MultiView", selectedIndex == 0)
-                        OverlayActionBtn(Icons.Filled.FiberManualRecord, "Record", selectedIndex == 1)
+                        OverlayActionBtn(
+                            Icons.Filled.FiberManualRecord,
+                            if (isRecording) "Recording" else "Record",
+                            selectedIndex == 1,
+                            iconTint = if (isRecording) Color(0xFFEF4444) else null
+                        )
                         OverlayActionBtn(
                             if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
                             if (isMuted) "Unmute" else "Mute", selectedIndex == 2
@@ -1023,7 +1048,7 @@ private fun FullscreenActionOverlay(
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun OverlayActionBtn(icon: ImageVector, label: String, isSelected: Boolean) {
+private fun OverlayActionBtn(icon: ImageVector, label: String, isSelected: Boolean, iconTint: Color? = null) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
@@ -1040,7 +1065,7 @@ private fun OverlayActionBtn(icon: ImageVector, label: String, isSelected: Boole
     ) {
         Icon(
             icon, label,
-            tint = if (isSelected) PlexTextPrimary else PlexTextSecondary,
+            tint = iconTint ?: if (isSelected) PlexTextPrimary else PlexTextSecondary,
             modifier = Modifier.size(22.dp)
         )
         Spacer(Modifier.height(4.dp))

@@ -1,13 +1,21 @@
 package com.airdvr.tv.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.airdvr.tv.AirDVRApp
+import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.ui.screens.*
 import com.airdvr.tv.util.Constants
 
@@ -17,7 +25,7 @@ fun AppNavigation() {
     val tokenManager = remember { AirDVRApp.instance.tokenManager }
 
     val startDestination = if (tokenManager.isLoggedIn()) {
-        Constants.ROUTE_LIVE_TV
+        "zip_check"
     } else {
         Constants.ROUTE_LOGIN
     }
@@ -29,8 +37,50 @@ fun AppNavigation() {
         composable(Constants.ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {
-                    navController.navigate(Constants.ROUTE_LIVE_TV) {
+                    navController.navigate("zip_check") {
                         popUpTo(Constants.ROUTE_LOGIN) { inclusive = true }
+                    }
+                }
+            )
+        }
+
+        // Zip code check — redirects to ZipCodeScreen if profile has no zip
+        composable("zip_check") {
+            val api = remember { ApiClient.api }
+            LaunchedEffect(Unit) {
+                try {
+                    val resp = api.getUserProfile()
+                    val zip = resp.body()?.zipCode
+                    if (zip.isNullOrBlank()) {
+                        navController.navigate(Constants.ROUTE_ZIP_CODE) {
+                            popUpTo("zip_check") { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Constants.ROUTE_LIVE_TV) {
+                            popUpTo("zip_check") { inclusive = true }
+                        }
+                    }
+                } catch (_: Exception) {
+                    navController.navigate(Constants.ROUTE_LIVE_TV) {
+                        popUpTo("zip_check") { inclusive = true }
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0D1117)),
+                contentAlignment = Alignment.Center
+            ) {
+                com.airdvr.tv.ui.components.LoadingSpinner(message = "")
+            }
+        }
+
+        composable(Constants.ROUTE_ZIP_CODE) {
+            ZipCodeScreen(
+                onContinue = {
+                    navController.navigate(Constants.ROUTE_LIVE_TV) {
+                        popUpTo(Constants.ROUTE_ZIP_CODE) { inclusive = true }
                     }
                 }
             )

@@ -7,13 +7,21 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +32,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,6 +52,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showZipDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.load() }
 
@@ -68,6 +79,13 @@ fun SettingsScreen(
             item { SectionLabel("ACCOUNT") }
             item { SettingsRow("Email", uiState.userEmail.ifBlank { "Not set" }) }
             item { SettingsRow("Plan", uiState.userPlan.ifBlank { "Free" }) }
+            item {
+                SettingsRow(
+                    "Location",
+                    uiState.userZipCode.ifBlank { "Not set" },
+                    onClick = { showZipDialog = true }
+                )
+            }
             item { Divider() }
 
             // ── Tuner Status ──
@@ -266,6 +284,17 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(32.dp)) }
         }
     }
+
+    if (showZipDialog) {
+        ZipCodeDialog(
+            currentZip = uiState.userZipCode,
+            onDismiss = { showZipDialog = false },
+            onSave = { zip ->
+                viewModel.updateZipCode(zip)
+                showZipDialog = false
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -320,5 +349,63 @@ private fun Divider() {
         thickness = 0.5.dp,
         color = PlexBorder,
         modifier = Modifier.padding(vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun ZipCodeDialog(
+    currentZip: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var zip by remember { mutableStateOf(currentZip) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = PlexCard,
+        title = {
+            androidx.compose.material3.Text(
+                "Change Location",
+                color = PlexTextPrimary, fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            OutlinedTextField(
+                value = zip,
+                onValueChange = { if (it.length <= 5 && it.all { c -> c.isDigit() }) zip = it },
+                placeholder = {
+                    androidx.compose.material3.Text("Zip Code", color = PlexTextTertiary)
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { if (zip.length == 5) onSave(zip) }),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                textStyle = LocalTextStyle.current.copy(color = PlexTextPrimary, fontSize = 16.sp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = PlexTextPrimary.copy(alpha = 0.4f),
+                    unfocusedBorderColor = PlexBorder,
+                    focusedTextColor = PlexTextPrimary, unfocusedTextColor = PlexTextPrimary,
+                    cursorColor = PlexTextPrimary,
+                    focusedContainerColor = PlexSurface, unfocusedContainerColor = PlexSurface
+                )
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (zip.length == 5) onSave(zip) },
+                enabled = zip.length == 5
+            ) {
+                androidx.compose.material3.Text("Save", color = PlexTextPrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
+            }
+        }
     )
 }

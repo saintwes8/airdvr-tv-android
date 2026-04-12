@@ -44,4 +44,22 @@ interface AirDVRApi {
 
     @GET("api/channels/logos")
     suspend fun getChannelLogos(): Response<Map<String, ChannelLogoInfo>>
+
+    @GET("api/user/profile")
+    suspend fun getUserProfile(): Response<UserProfile>
+
+    @PUT("api/user/zip")
+    suspend fun setZipCode(@Body request: SetZipRequest): Response<UserProfile>
+
+    @POST("api/recordings/schedule")
+    suspend fun scheduleRecording(@Body request: ScheduleRequest): Response<RecordingSchedule>
+
+    @GET("api/recordings/schedules")
+    suspend fun getRecordingSchedules(): Response<List<RecordingSchedule>>
+
+    @DELETE("api/recordings/schedule/{id}")
+    suspend fun deleteSchedule(@Path("id") id: String): Response<Unit>
+
+    @DELETE("api/recordings/{id}")
+    suspend fun deleteRecording(@Path("id") id: String): Response<Unit>
 }

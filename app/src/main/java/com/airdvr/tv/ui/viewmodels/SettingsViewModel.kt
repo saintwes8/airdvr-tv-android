@@ -3,6 +3,7 @@ package com.airdvr.tv.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.AirDVRApp
+import com.airdvr.tv.data.models.SetZipRequest
 import com.airdvr.tv.data.models.StorageInfo
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.repository.AuthRepository
@@ -16,6 +17,7 @@ data class SettingsUiState(
     val isLoading: Boolean = true,
     val userEmail: String = "",
     val userPlan: String = "Free",
+    val userZipCode: String = "",
     val tunerTotal: Int = 2,
     val tunersInUse: Int = 0,
     val storageInfo: StorageInfo? = null,
@@ -56,18 +58,24 @@ class SettingsViewModel : ViewModel() {
                 val storageDeferred = async {
                     try { api.getStorage() } catch (e: Exception) { null }
                 }
+                val profileDeferred = async {
+                    try { api.getUserProfile() } catch (e: Exception) { null }
+                }
 
                 val tunersResponse = tunersDeferred.await()
                 val storageResponse = storageDeferred.await()
+                val profileResponse = profileDeferred.await()
 
                 val total = tunersResponse?.body()?.total ?: 2
                 val inUse = tunersResponse?.body()?.inUse ?: 0
+                val zip = profileResponse?.body()?.zipCode ?: ""
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     tunerTotal = total,
                     tunersInUse = inUse,
-                    storageInfo = storageResponse?.body()
+                    storageInfo = storageResponse?.body(),
+                    userZipCode = zip
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
@@ -95,6 +103,17 @@ class SettingsViewModel : ViewModel() {
     fun setGuideColor(color: String) {
         guidePrefsManager.setColor(color)
         _uiState.value = _uiState.value.copy(guideColor = color)
+    }
+
+    fun updateZipCode(zip: String) {
+        viewModelScope.launch {
+            try {
+                val resp = api.setZipCode(SetZipRequest(zip))
+                if (resp.isSuccessful) {
+                    _uiState.value = _uiState.value.copy(userZipCode = zip)
+                }
+            } catch (_: Exception) { }
+        }
     }
 
     fun setAppVersion(version: String) {

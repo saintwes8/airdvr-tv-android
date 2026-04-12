@@ -112,3 +112,35 @@ data class PopularArtworkResponse(
     @SerializedName("results") val results: List<SearchResult>? = null,
     @SerializedName("cached") val cached: Boolean? = null
 )
+
+// ── User profile / zip code ──────────────────────────────────────────────
+
+data class UserProfile(
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("zip_code") val zipCode: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null
+)
+
+data class SetZipRequest(
+    @SerializedName("zip_code") val zipCode: String
+)
+
+// ── Recording schedule ───────────────────────────────────────────────────
+
+data class RecordingSchedule(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("channel_number") val channelNumber: String? = null,
+    @SerializedName("title") val title: String? = null,
+    @SerializedName("start_time") val startTime: String? = null,
+    @SerializedName("end_time") val endTime: String? = null,
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("status") val status: String? = null
+)
+
+data class ScheduleRequest(
+    @SerializedName("channel_number") val channelNumber: String,
+    @SerializedName("title") val title: String,
+    @SerializedName("start_time") val startTime: String,
+    @SerializedName("end_time") val endTime: String,
+    @SerializedName("type") val type: String
+)

@@ -6,6 +6,8 @@ import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.models.RecordingSchedule
+import com.airdvr.tv.data.models.ScheduleRequest
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.StreamRepository
@@ -82,7 +84,10 @@ data class LiveTVUiState(
     val actionButtonIndex: Int = 0,
 
     // User profile
-    val userInitial: String = ""
+    val userInitial: String = "",
+
+    // Recording schedules
+    val schedules: List<RecordingSchedule> = emptyList()
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -185,8 +190,9 @@ class LiveTVViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            // Load channel logos in parallel
+            // Load channel logos and schedules in parallel
             launch { ChannelLogoRepository.loadLogos() }
+            launch { fetchSchedules() }
 
             try {
                 val resp = api.getTuners()
@@ -480,7 +486,7 @@ class LiveTVViewModel : ViewModel() {
                 hideFullscreenOverlay()
                 startMultiView()
             }
-            1 -> showToast("Recording coming soon")
+            1 -> recordCurrentProgram()
             2 -> toggleMute()
             3 -> cycleQuality()
             4 -> toggleCC()
@@ -669,6 +675,96 @@ class LiveTVViewModel : ViewModel() {
         if (idx > 0) {
             tuneToChannel(channels[idx - 1])
             _uiState.value = _uiState.value.copy(focusedRow = idx - 1)
+        }
+    }
+
+    // ── Recording ───────────────────────────────────────────────────────────
+
+    private suspend fun fetchSchedules() {
+        try {
+            val resp = api.getRecordingSchedules()
+            if (resp.isSuccessful) {
+                _uiState.value = _uiState.value.copy(schedules = resp.body() ?: emptyList())
+            }
+        } catch (_: Exception) { }
+    }
+
+    fun recordCurrentProgram() {
+        val s = _uiState.value
+        val channel = s.currentChannel ?: return
+        val program = s.currentProgram
+        val now = System.currentTimeMillis() / 1000
+        val title = program?.title ?: channel.guideName ?: "Manual Recording"
+        val channelNumber = channel.guideNumber ?: return
+
+        val isAiring = program != null && program.startEpochSec <= now && now < program.endEpochSec
+        val startTime = if (isAiring) {
+            java.time.Instant.now().toString()
+        } else {
+            program?.startTime ?: java.time.Instant.now().toString()
+        }
+        val endTime = program?.endTime ?: java.time.Instant.ofEpochSecond(now + 3600).toString()
+        val type = if (isAiring) "manual" else "once"
+
+        viewModelScope.launch {
+            try {
+                val resp = api.scheduleRecording(
+                    ScheduleRequest(channelNumber, title, startTime, endTime, type)
+                )
+                if (resp.isSuccessful) {
+                    val msg = if (isAiring) "Recording started: $title" else "Recording scheduled: $title"
+                    showToast(msg)
+                    fetchSchedules()
+                } else {
+                    showToast("Could not schedule recording")
+                }
+            } catch (_: Exception) {
+                showToast("Could not connect. Check your network.")
+            }
+        }
+    }
+
+    /** Schedule a recording for a specific program (from guide grid). */
+    fun scheduleProgram(channel: Channel, program: EpgProgram) {
+        val channelNumber = channel.guideNumber ?: return
+        val title = program.title ?: "Recording"
+        val now = System.currentTimeMillis() / 1000
+        val isAiring = program.startEpochSec <= now && now < program.endEpochSec
+        val startTime = if (isAiring) java.time.Instant.now().toString() else (program.startTime ?: return)
+        val endTime = program.endTime ?: return
+        val type = if (isAiring) "manual" else "once"
+
+        viewModelScope.launch {
+            try {
+                val resp = api.scheduleRecording(
+                    ScheduleRequest(channelNumber, title, startTime, endTime, type)
+                )
+                if (resp.isSuccessful) {
+                    val msg = if (isAiring) "Recording started: $title" else "Recording scheduled: $title"
+                    showToast(msg)
+                    fetchSchedules()
+                } else {
+                    showToast("Could not schedule recording")
+                }
+            } catch (_: Exception) {
+                showToast("Could not connect. Check your network.")
+            }
+        }
+    }
+
+    fun isScheduled(program: EpgProgram): Boolean {
+        return _uiState.value.schedules.any { sched ->
+            sched.title == program.title && sched.channelNumber == program.guideNumber
+        }
+    }
+
+    fun isActivelyRecording(program: EpgProgram): Boolean {
+        val now = System.currentTimeMillis() / 1000
+        return _uiState.value.schedules.any { sched ->
+            sched.title == program.title &&
+            sched.channelNumber == program.guideNumber &&
+            (sched.status == "recording" || sched.status == "active" ||
+             (program.startEpochSec <= now && now < program.endEpochSec && sched.type == "manual"))
         }
     }
 
