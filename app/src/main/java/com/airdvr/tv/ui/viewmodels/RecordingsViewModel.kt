@@ -12,13 +12,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class RecordingCategory { ALL, SCHEDULED, TV_SHOWS, MOVIES, SPORTS }
+enum class RecordingsTab { RECORDINGS, UPCOMING }
+
+enum class RecordingCategory { ALL, TV_SHOWS, MOVIES, SPORTS }
 
 data class RecordingsUiState(
     val isLoading: Boolean = true,
     val allRecordings: List<Recording> = emptyList(),
     val filteredRecordings: List<Recording> = emptyList(),
     val schedules: List<RecordingSchedule> = emptyList(),
+    val selectedTab: RecordingsTab = RecordingsTab.RECORDINGS,
     val selectedCategory: RecordingCategory = RecordingCategory.ALL,
     val error: String? = null,
     val toastMessage: String? = null
@@ -60,6 +63,10 @@ class RecordingsViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(schedules = resp.body() ?: emptyList())
             }
         } catch (_: Exception) { }
+    }
+
+    fun setTab(tab: RecordingsTab) {
+        _uiState.value = _uiState.value.copy(selectedTab = tab)
     }
 
     fun scheduleRecording(channelNumber: String, title: String, startTime: String, endTime: String, type: String) {
@@ -135,7 +142,6 @@ class RecordingsViewModel : ViewModel() {
     private fun applyFilter(recordings: List<Recording>, category: RecordingCategory): List<Recording> {
         return when (category) {
             RecordingCategory.ALL -> recordings
-            RecordingCategory.SCHEDULED -> emptyList()
             RecordingCategory.TV_SHOWS -> recordings.filter { r ->
                 val cat = r.category?.lowercase() ?: ""
                 cat.contains("series") || cat.contains("tv") || cat.contains("show") || cat.contains("episode")

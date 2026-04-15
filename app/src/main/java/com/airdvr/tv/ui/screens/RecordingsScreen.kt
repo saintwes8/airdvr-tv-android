@@ -5,11 +5,9 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -31,6 +29,7 @@ import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +42,7 @@ import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.RecordingCategory
+import com.airdvr.tv.ui.viewmodels.RecordingsTab
 import com.airdvr.tv.ui.viewmodels.RecordingsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -57,13 +57,6 @@ fun RecordingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<Recording?>(null) }
     var cancelTarget by remember { mutableStateOf<RecordingSchedule?>(null) }
-    val tabs = listOf(
-        "All" to RecordingCategory.ALL,
-        "Scheduled" to RecordingCategory.SCHEDULED,
-        "TV Shows" to RecordingCategory.TV_SHOWS,
-        "Movies" to RecordingCategory.MOVIES,
-        "Sports" to RecordingCategory.SPORTS
-    )
 
     Column(
         modifier = Modifier.fillMaxSize().background(PlexBg)
@@ -74,52 +67,73 @@ fun RecordingsScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = PlexTextPrimary)
+            Surface(
+                onClick = onBack,
+                shape = ClickableSurfaceDefaults.shape(shape = CircleShape),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = Color.Transparent,
+                    focusedContainerColor = PlexCard
+                )
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack, "Back",
+                    tint = PlexTextPrimary,
+                    modifier = Modifier.padding(8.dp)
+                )
             }
             Text("Recordings", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary)
         }
 
-        // Filter tabs
-        LazyRow(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        // Section 1: Top toggle — Recordings | Upcoming
+        Row(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            itemsIndexed(tabs) { _, (label, category) ->
-                val isSelected = uiState.selectedCategory == category
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(vertical = 4.dp)
-                ) {
-                    Text(
-                        label,
-                        fontSize = 14.sp,
-                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                        color = if (isSelected) PlexTextPrimary else PlexTextTertiary
+            TabPill(
+                label = "Recordings",
+                isSelected = uiState.selectedTab == RecordingsTab.RECORDINGS,
+                onClick = { viewModel.setTab(RecordingsTab.RECORDINGS) }
+            )
+            TabPill(
+                label = "Upcoming",
+                isSelected = uiState.selectedTab == RecordingsTab.UPCOMING,
+                onClick = { viewModel.setTab(RecordingsTab.UPCOMING) }
+            )
+        }
+
+        // Section 2: Category filter chips (only for Recordings tab)
+        if (uiState.selectedTab == RecordingsTab.RECORDINGS) {
+            val categories = listOf(
+                "All" to RecordingCategory.ALL,
+                "TV Shows" to RecordingCategory.TV_SHOWS,
+                "Movies" to RecordingCategory.MOVIES,
+                "Sports" to RecordingCategory.SPORTS
+            )
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                categories.forEach { (label, category) ->
+                    FilterChip(
+                        label = label,
+                        isSelected = uiState.selectedCategory == category,
+                        onClick = { viewModel.setCategory(category) }
                     )
-                    if (isSelected) {
-                        Spacer(Modifier.height(4.dp))
-                        Box(
-                            modifier = Modifier
-                                .width(28.dp).height(2.dp)
-                                .background(PlexTextPrimary, RoundedCornerShape(1.dp))
-                        )
-                    }
                 }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
 
         // Content
         Box(modifier = Modifier.fillMaxSize()) {
             if (uiState.isLoading) {
                 RecordingsShimmer()
-            } else if (uiState.selectedCategory == RecordingCategory.SCHEDULED) {
-                // Scheduled tab — show schedules
+            } else if (uiState.selectedTab == RecordingsTab.UPCOMING) {
+                // Upcoming tab — show schedules
                 if (uiState.schedules.isEmpty()) {
                     Text(
-                        "No scheduled recordings",
+                        "No upcoming recordings",
                         color = PlexTextTertiary, fontSize = 16.sp,
                         modifier = Modifier.align(Alignment.Center)
                     )
@@ -140,7 +154,7 @@ fun RecordingsScreen(
                     }
                 }
             } else {
-                // Recordings tabs
+                // Recordings tab
                 if (uiState.filteredRecordings.isEmpty()) {
                     Text(
                         "No recordings yet",
@@ -248,6 +262,75 @@ fun RecordingsScreen(
     }
 }
 
+// ─── Tab pill (segmented control) ───────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun TabPill(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) PlexTextPrimary else PlexCard,
+            focusedContainerColor = if (isSelected) PlexTextPrimary else PlexSurface
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(
+                1.dp, if (isSelected) PlexTextPrimary else PlexBorder
+            )),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        ),
+        modifier = Modifier.height(36.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        ) {
+            Text(
+                label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isSelected) PlexBg else PlexTextSecondary
+            )
+        }
+    }
+}
+
+// ─── Filter chip ────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun FilterChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(14.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isSelected) PlexCard else Color.Transparent,
+            focusedContainerColor = PlexCard
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(
+                if (isSelected) 1.dp else 0.5.dp,
+                if (isSelected) PlexTextPrimary else PlexBorder
+            )),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(1.5.dp, PlexTextPrimary))
+        ),
+        modifier = Modifier.height(30.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.padding(horizontal = 14.dp)
+        ) {
+            Text(
+                label,
+                fontSize = 13.sp,
+                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                color = if (isSelected) PlexTextPrimary else PlexTextTertiary
+            )
+        }
+    }
+}
+
 // ─── Schedule card ──────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
@@ -343,7 +426,6 @@ private fun formatScheduleTime(isoTime: String?): String {
         val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
-        // Try with fractional seconds / Z suffix variations
         val cleaned = isoTime.replace("Z", "+00:00").substringBefore("+").substringBefore(".")
         val date = parser.parse(cleaned) ?: return ""
         val now = Calendar.getInstance()
@@ -355,7 +437,7 @@ private fun formatScheduleTime(isoTime: String?): String {
                 now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> "Today $timeStr"
             now.get(Calendar.DAY_OF_YEAR) + 1 == target.get(Calendar.DAY_OF_YEAR) &&
                 now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> "Tomorrow $timeStr"
-            else -> SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault()).format(date)
+            else -> SimpleDateFormat("EEE MMM d h:mm a", Locale.getDefault()).format(date)
         }
     } catch (_: Exception) { "" }
 }
@@ -369,7 +451,6 @@ private fun RecordingPosterCard(
     onClick: () -> Unit,
     onLongPress: () -> Unit
 ) {
-    var isFocused by remember { mutableStateOf(false) }
     val posterUrl = rememberPosterUrl(recording.title)
     val progress = if (recording.duration > 0 && recording.resumePositionSec > 0) {
         (recording.resumePositionSec.toFloat() / recording.duration).coerceIn(0f, 1f)
@@ -381,7 +462,6 @@ private fun RecordingPosterCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(2f / 3f)
-            .onFocusChanged { isFocused = it.isFocused }
             .onKeyEvent { keyEvent ->
                 if (keyEvent.type == KeyEventType.KeyDown &&
                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU
