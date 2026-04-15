@@ -44,20 +44,28 @@ fun AppNavigation() {
             )
         }
 
-        // Zip code check — redirects to ZipCodeScreen if profile has no zip
+        // Zip code check — skip if guide already has channels
         composable("zip_check") {
             val api = remember { ApiClient.api }
             LaunchedEffect(Unit) {
                 try {
-                    val resp = api.getUserProfile()
-                    val zip = resp.body()?.zipCode
-                    if (zip.isNullOrBlank()) {
-                        navController.navigate(Constants.ROUTE_ZIP_CODE) {
+                    val guideResp = api.getGuide()
+                    val hasChannels = guideResp.body()?.channels?.isNotEmpty() == true
+                    if (hasChannels) {
+                        navController.navigate(Constants.ROUTE_LIVE_TV) {
                             popUpTo("zip_check") { inclusive = true }
                         }
                     } else {
-                        navController.navigate(Constants.ROUTE_LIVE_TV) {
-                            popUpTo("zip_check") { inclusive = true }
+                        val profileResp = api.getUserProfile()
+                        val zip = profileResp.body()?.zipCode
+                        if (zip.isNullOrBlank()) {
+                            navController.navigate(Constants.ROUTE_ZIP_CODE) {
+                                popUpTo("zip_check") { inclusive = true }
+                            }
+                        } else {
+                            navController.navigate(Constants.ROUTE_LIVE_TV) {
+                                popUpTo("zip_check") { inclusive = true }
+                            }
                         }
                     }
                 } catch (_: Exception) {
