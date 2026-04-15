@@ -3,6 +3,7 @@ package com.airdvr.tv.ui.screens
 import android.view.KeyEvent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -38,10 +39,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import com.airdvr.tv.data.models.Recording
+import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.RecordingCategory
 import com.airdvr.tv.ui.viewmodels.RecordingsViewModel
+import java.text.SimpleDateFormat
+import java.util.*
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -52,8 +56,10 @@ fun RecordingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<Recording?>(null) }
+    var cancelTarget by remember { mutableStateOf<RecordingSchedule?>(null) }
     val tabs = listOf(
         "All" to RecordingCategory.ALL,
+        "Scheduled" to RecordingCategory.SCHEDULED,
         "TV Shows" to RecordingCategory.TV_SHOWS,
         "Movies" to RecordingCategory.MOVIES,
         "Sports" to RecordingCategory.SPORTS
@@ -107,16 +113,41 @@ fun RecordingsScreen(
 
         // Content
         Box(modifier = Modifier.fillMaxSize()) {
-            when {
-                uiState.isLoading -> RecordingsShimmer()
-                uiState.filteredRecordings.isEmpty() -> {
+            if (uiState.isLoading) {
+                RecordingsShimmer()
+            } else if (uiState.selectedCategory == RecordingCategory.SCHEDULED) {
+                // Scheduled tab — show schedules
+                if (uiState.schedules.isEmpty()) {
+                    Text(
+                        "No scheduled recordings",
+                        color = PlexTextTertiary, fontSize = 16.sp,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
+                        items(uiState.schedules, key = { it.id ?: "" }) { schedule ->
+                            ScheduleCard(
+                                schedule = schedule,
+                                onCancel = { cancelTarget = schedule }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Recordings tabs
+                if (uiState.filteredRecordings.isEmpty()) {
                     Text(
                         "No recordings yet",
                         color = PlexTextTertiary, fontSize = 16.sp,
                         modifier = Modifier.align(Alignment.Center)
                     )
-                }
-                else -> {
+                } else {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(4),
                         modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
@@ -150,7 +181,7 @@ fun RecordingsScreen(
         }
     }
 
-    // Delete confirmation dialog
+    // Delete recording dialog
     if (deleteTarget != null) {
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
@@ -182,7 +213,154 @@ fun RecordingsScreen(
             }
         )
     }
+
+    // Cancel schedule dialog
+    if (cancelTarget != null) {
+        AlertDialog(
+            onDismissRequest = { cancelTarget = null },
+            containerColor = PlexCard,
+            title = {
+                androidx.compose.material3.Text(
+                    "Cancel Schedule",
+                    color = PlexTextPrimary, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    "Cancel recording of \"${cancelTarget?.title ?: ""}\"?",
+                    color = PlexTextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    cancelTarget?.id?.let { viewModel.cancelSchedule(it) }
+                    cancelTarget = null
+                }) {
+                    androidx.compose.material3.Text("Cancel Schedule", color = Color(0xFFEF4444))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelTarget = null }) {
+                    androidx.compose.material3.Text("Keep", color = PlexTextSecondary)
+                }
+            }
+        )
+    }
 }
+
+// ─── Schedule card ──────────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ScheduleCard(
+    schedule: RecordingSchedule,
+    onCancel: () -> Unit
+) {
+    val isRecording = schedule.status?.lowercase() == "recording" || schedule.status?.lowercase() == "active"
+    val timeText = formatScheduleTime(schedule.startTime)
+
+    Card(
+        onClick = onCancel,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU
+                ) {
+                    onCancel(); true
+                } else false
+            },
+        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = CardDefaults.colors(
+            containerColor = PlexCard,
+            focusedContainerColor = PlexCard
+        ),
+        border = CardDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    schedule.title ?: "",
+                    fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    color = PlexTextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (!schedule.channelNumber.isNullOrBlank()) {
+                        Text("CH ${schedule.channelNumber}", fontSize = 12.sp, color = PlexTextTertiary)
+                    }
+                    if (timeText.isNotBlank()) {
+                        Text(timeText, fontSize = 12.sp, color = PlexTextSecondary)
+                    }
+                }
+            }
+            // Status badge
+            if (isRecording) {
+                val transition = rememberInfiniteTransition(label = "pulse")
+                val pulseAlpha by transition.animateFloat(
+                    initialValue = 1f, targetValue = 0.3f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(800, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "pa"
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        Modifier.size(8.dp).clip(CircleShape)
+                            .background(Color(0xFFEF4444).copy(alpha = pulseAlpha))
+                    )
+                    Text("Recording", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFFEF4444))
+                }
+            } else {
+                Box(
+                    Modifier
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text("Scheduled", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFFF59E0B))
+                }
+            }
+        }
+    }
+}
+
+private fun formatScheduleTime(isoTime: String?): String {
+    if (isoTime.isNullOrBlank()) return ""
+    return try {
+        val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        // Try with fractional seconds / Z suffix variations
+        val cleaned = isoTime.replace("Z", "+00:00").substringBefore("+").substringBefore(".")
+        val date = parser.parse(cleaned) ?: return ""
+        val now = Calendar.getInstance()
+        val target = Calendar.getInstance().apply { time = date }
+        val timeStr = SimpleDateFormat("h:mm a", Locale.getDefault()).format(date)
+
+        when {
+            now.get(Calendar.DAY_OF_YEAR) == target.get(Calendar.DAY_OF_YEAR) &&
+                now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> "Today $timeStr"
+            now.get(Calendar.DAY_OF_YEAR) + 1 == target.get(Calendar.DAY_OF_YEAR) &&
+                now.get(Calendar.YEAR) == target.get(Calendar.YEAR) -> "Tomorrow $timeStr"
+            else -> SimpleDateFormat("EEE, MMM d · h:mm a", Locale.getDefault()).format(date)
+        }
+    } catch (_: Exception) { "" }
+}
+
+// ─── Recording poster card ──────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
