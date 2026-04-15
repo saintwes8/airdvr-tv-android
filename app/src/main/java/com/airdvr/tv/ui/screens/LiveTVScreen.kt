@@ -733,7 +733,7 @@ private fun GuideRow(
                             Box(Modifier.width(2.dp).fillMaxHeight().background(PlexTextPrimary).align(Alignment.CenterStart))
                         }
                         val hasSchedule = schedules.any { s ->
-                            s.title == prog.title && s.channelNumber == prog.guideNumber
+                            s.title == prog.title && s.channelNumber == channel.guideNumber
                         }
                         val isRecording = hasSchedule && isAiring
                         Column(
@@ -968,7 +968,7 @@ private fun FullscreenActionOverlay(
                 ) {
                     // Action buttons row
                     val isRecording = program != null && schedules.any { s ->
-                        s.title == program.title && s.channelNumber == program.guideNumber
+                        s.title == program.title && s.channelNumber == channel?.guideNumber
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         OverlayActionBtn(Icons.Filled.GridView, "MultiView", selectedIndex == 0)
