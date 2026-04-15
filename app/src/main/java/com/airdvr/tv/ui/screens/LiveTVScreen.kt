@@ -673,12 +673,13 @@ private fun GuideRow(
     guideCellBg: Color,
     schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList()
 ) {
+    key(channel.guideNumber) { // Force full recomposition when channel changes during recycling
     Row(modifier = Modifier.fillMaxWidth().height(ROW_DP.dp)) {
         // Channel label
         ChannelLabel(channel, isFocusedRow, isPlayingChannel, Modifier.width(CH_COL_DP.dp).fillMaxHeight())
 
         // Program cells
-        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
             val totalW = maxWidth.value
             val windowEnd = timeWindowStart + visibleDurationSec
             val sorted = programs.sortedBy { it.startEpochSec }
@@ -695,7 +696,7 @@ private fun GuideRow(
                 ) { Text("No data", color = PlexTextTertiary, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp)) }
             } else {
                 visible.forEachIndexed { programIndex, prog ->
-                    key(prog.programId ?: "${channel.guideNumber}_${programIndex}") {
+                    key("${channel.guideNumber}_${prog.programId ?: programIndex}") {
                     val isCurrentlyAiring = prog.startEpochSec <= now && now < prog.endEpochSec
                     // Currently airing: flush left (x=0). Future: snap to nearest slot boundary.
                     val cs = if (isCurrentlyAiring) {
@@ -714,8 +715,9 @@ private fun GuideRow(
                     Box(
                         modifier = Modifier
                             .offset(x = xOff).width(cellW).fillMaxHeight()
-                            .padding(vertical = 2.dp, horizontal = 1.dp).scale(scale)
+                            .padding(vertical = 2.dp, horizontal = 1.dp)
                             .clipToBounds()
+                            .scale(scale)
                             .background(
                                 guideCellBg,
                                 RoundedCornerShape(4.dp)
@@ -761,7 +763,8 @@ private fun GuideRow(
                             }
                             Text(
                                 "${timeFormat.format(Date(prog.startEpochSec * 1000))} - ${timeFormat.format(Date(prog.endEpochSec * 1000))}",
-                                fontSize = 12.sp, color = PlexTextTertiary, maxLines = 1
+                                fontSize = 12.sp, color = PlexTextTertiary, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -770,6 +773,7 @@ private fun GuideRow(
             }
         }
     }
+    } // key(channel.guideNumber)
 }
 
 @OptIn(ExperimentalTvMaterial3Api::class)
