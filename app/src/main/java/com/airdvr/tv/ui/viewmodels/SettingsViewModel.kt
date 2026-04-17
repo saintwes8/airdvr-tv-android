@@ -25,7 +25,8 @@ data class SettingsUiState(
     val guideOpacity: Float = 0.7f,
     val guideColor: String = "#21262D",
     val appVersion: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val toastMessage: String? = null
 )
 
 class SettingsViewModel : ViewModel() {
@@ -110,10 +111,24 @@ class SettingsViewModel : ViewModel() {
             try {
                 val resp = api.setZipCode(SetZipRequest(zip))
                 if (resp.isSuccessful) {
-                    _uiState.value = _uiState.value.copy(userZipCode = zip)
+                    _uiState.value = _uiState.value.copy(userZipCode = zip, toastMessage = "Guide data updating...")
+                    kotlinx.coroutines.delay(3000)
+                    _uiState.value = _uiState.value.copy(toastMessage = null)
+                } else {
+                    _uiState.value = _uiState.value.copy(toastMessage = "Could not update location")
+                    kotlinx.coroutines.delay(3000)
+                    _uiState.value = _uiState.value.copy(toastMessage = null)
                 }
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(toastMessage = "Could not connect. Check your network.")
+                kotlinx.coroutines.delay(3000)
+                _uiState.value = _uiState.value.copy(toastMessage = null)
+            }
         }
+    }
+
+    fun clearToast() {
+        _uiState.value = _uiState.value.copy(toastMessage = null)
     }
 
     fun setAppVersion(version: String) {

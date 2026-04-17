@@ -193,10 +193,40 @@ fun LiveTVScreen(
             return@Box
         }
 
-        when (uiState.mode) {
-            ScreenMode.GUIDE -> GuideLayout(uiState, exoPlayers[0], viewModel)
-            ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], viewModel)
-            ScreenMode.MULTIVIEW -> MultiViewLayout(uiState, exoPlayers, viewModel)
+        // Empty guide states
+        if (uiState.channels.isEmpty()) {
+            Box(Modifier.fillMaxSize().background(PlexBg), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Filled.SettingsInputAntenna, "Setup", tint = PlexTextTertiary, modifier = Modifier.size(48.dp))
+                    Text("Connect your HDHomeRun to get started", color = PlexTextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    Text("Download the AirDVR agent at airdvr.com/setup", color = PlexTextSecondary, fontSize = 14.sp)
+                }
+            }
+            return@Box
+        }
+
+        // Channels exist but programs may still be loading
+        if (uiState.programsByChannel.values.all { it.isEmpty() }) {
+            Box(Modifier.fillMaxSize()) {
+                when (uiState.mode) {
+                    ScreenMode.GUIDE -> GuideLayout(uiState, exoPlayers[0], viewModel)
+                    ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], viewModel)
+                    ScreenMode.MULTIVIEW -> MultiViewLayout(uiState, exoPlayers, viewModel)
+                }
+                Box(
+                    Modifier.align(Alignment.TopCenter).padding(top = 48.dp)
+                        .background(PlexCard.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 24.dp, vertical = 10.dp)
+                ) {
+                    Text("Guide data loading...", color = PlexTextSecondary, fontSize = 14.sp)
+                }
+            }
+        } else {
+            when (uiState.mode) {
+                ScreenMode.GUIDE -> GuideLayout(uiState, exoPlayers[0], viewModel)
+                ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], viewModel)
+                ScreenMode.MULTIVIEW -> MultiViewLayout(uiState, exoPlayers, viewModel)
+            }
         }
 
         // Toast

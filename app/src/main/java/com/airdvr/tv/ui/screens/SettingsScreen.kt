@@ -56,8 +56,9 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) { viewModel.load() }
 
+    Box(modifier = Modifier.fillMaxSize().background(PlexBg)) {
     Column(
-        modifier = Modifier.fillMaxSize().background(PlexBg)
+        modifier = Modifier.fillMaxSize()
     ) {
         // Top bar
         Row(
@@ -82,7 +83,7 @@ fun SettingsScreen(
             item {
                 SettingsRow(
                     "Location",
-                    uiState.userZipCode.ifBlank { "Not set" },
+                    uiState.userZipCode.ifBlank { "Auto-detected" },
                     onClick = { showZipDialog = true }
                 )
             }
@@ -284,6 +285,20 @@ fun SettingsScreen(
             item { Spacer(Modifier.height(32.dp)) }
         }
     }
+
+    // Toast
+    if (uiState.toastMessage != null) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 32.dp)
+                .background(PlexCard, RoundedCornerShape(8.dp))
+                .padding(horizontal = 20.dp, vertical = 10.dp)
+        ) {
+            Text(uiState.toastMessage ?: "", fontSize = 14.sp, color = PlexTextPrimary)
+        }
+    }
+    } // end Box
 
     if (showZipDialog) {
         ZipCodeDialog(
