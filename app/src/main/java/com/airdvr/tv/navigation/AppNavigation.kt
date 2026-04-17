@@ -8,6 +8,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.net.Uri
 import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -143,22 +144,34 @@ fun AppNavigation() {
 
         composable(Constants.ROUTE_RECORDINGS) {
             RecordingsScreen(
-                onNavigatePlayer = { recordingId ->
-                    navController.navigate("player/$recordingId")
+                onNavigatePlayer = { recordingId, streamUrl ->
+                    val route = if (streamUrl != null) {
+                        "player/$recordingId?streamUrl=${Uri.encode(streamUrl)}"
+                    } else {
+                        "player/$recordingId"
+                    }
+                    navController.navigate(route)
                 },
                 onBack = { navController.popBackStack() }
             )
         }
 
         composable(
-            route = Constants.ROUTE_PLAYER,
+            route = "${Constants.ROUTE_PLAYER}?streamUrl={streamUrl}",
             arguments = listOf(
-                navArgument("recordingId") { type = NavType.StringType }
+                navArgument("recordingId") { type = NavType.StringType },
+                navArgument("streamUrl") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
             )
         ) { backStackEntry ->
             val recordingId = backStackEntry.arguments?.getString("recordingId") ?: ""
+            val streamUrl = backStackEntry.arguments?.getString("streamUrl")
             PlayerScreen(
                 recordingId = recordingId,
+                streamUrl = streamUrl,
                 onBack = { navController.popBackStack() }
             )
         }

@@ -7,6 +7,7 @@ import com.airdvr.tv.data.models.Recording
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
 import com.airdvr.tv.data.repository.RecordingsRepository
+import com.airdvr.tv.util.Constants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -115,6 +116,31 @@ class RecordingsViewModel : ViewModel() {
                 }
             } catch (_: Exception) {
                 showToast("Could not connect. Check your network.")
+            }
+        }
+    }
+
+    fun playRecording(recording: Recording, onPlayUrl: (String) -> Unit) {
+        viewModelScope.launch {
+            if (recording.storageType == "cloud") {
+                try {
+                    val resp = api.getRecordingStream(recording.id!!)
+                    if (resp.isSuccessful) {
+                        val url = resp.body()?.url
+                        if (url != null) onPlayUrl(url)
+                        else showToast("Could not get playback URL")
+                    } else if (resp.code() == 403) {
+                        showToast("Cloud playback requires Pro subscription")
+                    } else {
+                        showToast("Could not load recording")
+                    }
+                } catch (_: Exception) {
+                    showToast("Could not connect. Check your network.")
+                }
+            } else {
+                // Local recording — stream through tunnel
+                val streamUrl = "${Constants.BASE_URL}api/stream/recording/${recording.id}/stream.m3u8"
+                onPlayUrl(streamUrl)
             }
         }
     }

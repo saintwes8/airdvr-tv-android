@@ -62,4 +62,7 @@ interface AirDVRApi {
 
     @DELETE("api/recordings/{id}")
     suspend fun deleteRecording(@Path("id") id: String): Response<Unit>
+
+    @GET("api/recordings/{id}/stream")
+    suspend fun getRecordingStream(@Path("id") id: String): Response<RecordingStreamResponse>
 }

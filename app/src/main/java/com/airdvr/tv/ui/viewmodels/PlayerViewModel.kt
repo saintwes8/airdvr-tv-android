@@ -31,13 +31,13 @@ class PlayerViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
-    fun loadRecording(recordingId: String) {
+    fun loadRecording(recordingId: String, preResolvedUrl: String? = null) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             recordingsRepo.getRecordings().onSuccess { recordings ->
                 val recording = recordings.find { it.id == recordingId }
                 if (recording != null) {
-                    val streamUrl = streamRepo.getRecordingStreamUrl(recordingId)
+                    val streamUrl = preResolvedUrl ?: streamRepo.getRecordingStreamUrl(recordingId)
                     val resumeMs = recording.resumePositionSec * 1000L
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

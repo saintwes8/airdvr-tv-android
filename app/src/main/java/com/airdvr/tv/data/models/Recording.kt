@@ -21,6 +21,7 @@ data class Recording(
     @SerializedName("episode") val episodeNumber: Int? = null,
     @SerializedName("file_size_mb") val fileSizeMb: Float? = null,
     @SerializedName("storage_type") val storageType: String? = null,
+    @SerializedName("file_path") val filePath: String? = null,
     @SerializedName("tmdb_id") val tmdbId: String? = null
 ) {
     val startEpochSec: Long get() = parseIsoToEpochSec(startTime)

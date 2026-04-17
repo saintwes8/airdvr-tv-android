@@ -50,7 +50,7 @@ import java.util.*
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun RecordingsScreen(
-    onNavigatePlayer: (String) -> Unit,
+    onNavigatePlayer: (recordingId: String, streamUrl: String?) -> Unit,
     onBack: () -> Unit,
     viewModel: RecordingsViewModel = viewModel()
 ) {
@@ -172,7 +172,11 @@ fun RecordingsScreen(
                         items(uiState.filteredRecordings) { recording ->
                             RecordingPosterCard(
                                 recording = recording,
-                                onClick = { onNavigatePlayer(recording.id ?: "") },
+                                onClick = {
+                                    viewModel.playRecording(recording) { url ->
+                                        onNavigatePlayer(recording.id ?: "", url)
+                                    }
+                                },
                                 onLongPress = { deleteTarget = recording }
                             )
                         }

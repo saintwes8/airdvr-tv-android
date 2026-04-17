@@ -35,6 +35,7 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.airdvr.tv.AirDVRApp
@@ -49,6 +50,7 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun PlayerScreen(
     recordingId: String,
+    streamUrl: String? = null,
     onBack: () -> Unit,
     viewModel: PlayerViewModel = viewModel()
 ) {
@@ -57,7 +59,7 @@ fun PlayerScreen(
     val tokenManager = remember { AirDVRApp.instance.tokenManager }
     val focusRequester = remember { FocusRequester() }
 
-    LaunchedEffect(recordingId) { viewModel.loadRecording(recordingId) }
+    LaunchedEffect(recordingId) { viewModel.loadRecording(recordingId, streamUrl) }
 
     val exoPlayer = remember {
         val loadControl = DefaultLoadControl.Builder()
@@ -93,9 +95,14 @@ fun PlayerScreen(
         val headers = if (token != null) mapOf("Authorization" to "Bearer $token") else emptyMap()
         val factory = DefaultHttpDataSource.Factory()
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
-        val src = HlsMediaSource.Factory(factory)
-            .setAllowChunklessPreparation(true)
-            .createMediaSource(MediaItem.fromUri(url))
+        val src = if (url.contains(".m3u8")) {
+            HlsMediaSource.Factory(factory)
+                .setAllowChunklessPreparation(true)
+                .createMediaSource(MediaItem.fromUri(url))
+        } else {
+            ProgressiveMediaSource.Factory(factory)
+                .createMediaSource(MediaItem.fromUri(url))
+        }
         exoPlayer.stop()
         exoPlayer.setMediaSource(src)
         exoPlayer.prepare()

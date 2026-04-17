@@ -144,3 +144,11 @@ data class ScheduleRequest(
     @SerializedName("end_time") val endTime: String,
     @SerializedName("type") val type: String
 )
+
+// ── Recording stream (cloud playback) ───────────────────────────────────
+
+data class RecordingStreamResponse(
+    @SerializedName("url") val url: String? = null,
+    @SerializedName("expiresAt") val expiresAt: String? = null,
+    @SerializedName("storage_type") val storageType: String? = null
+)
