@@ -206,6 +206,21 @@ fun LiveTVScreen(
                         return@onKeyEvent true
                     }
                 }
+                // Nav rail CENTER/ENTER — dispatch to the focused item
+                if (uiState.navRailVisible &&
+                    (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    when (uiState.navRailFocusedIndex) {
+                        0 -> onNavigateHome()
+                        1 -> onNavigateWhereToWatch()
+                        2 -> onNavigateSportsCalendar()
+                        3 -> onNavigateRecordings()
+                        4 -> onNavigateCustomChannels()
+                        5 -> viewModel.hideNavRail() // Live TV (already here)
+                        6 -> onNavigateSettings()
+                    }
+                    return@onKeyEvent true
+                }
                 handleKey(code, uiState, viewModel, onNavigateHome)
             }
     ) {
@@ -312,6 +327,7 @@ fun LiveTVScreen(
         PlexNavRail(
             visible = uiState.navRailVisible,
             userInitial = uiState.userInitial,
+            focusedIndex = uiState.navRailFocusedIndex,
             onHome = onNavigateHome,
             onWhereToWatch = onNavigateWhereToWatch,
             onSportsCalendar = onNavigateSportsCalendar,
@@ -385,11 +401,14 @@ private fun handleFullscreenKey(
     vm: LiveTVViewModel,
     onHome: () -> Unit
 ): Boolean {
-    // Nav rail visible — handle key events for the rail (BACK exits)
+    // Nav rail visible — handle key events for the rail
     if (uiState.navRailVisible) {
         return when (code) {
+            KeyEvent.KEYCODE_DPAD_UP -> { vm.navRailUp(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { vm.navRailDown(); true }
             KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.hideNavRail(); true }
             KeyEvent.KEYCODE_BACK -> { vm.hideNavRail(); true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> true // handled in composable onKeyEvent
             else -> false
         }
     }
@@ -1116,12 +1135,12 @@ private fun FullscreenActionOverlay(
                         }
                         // Up Next
                         if (channel != null) {
-                            val chNum = channel.guideNumber ?: ""
                             val nextProg = programs?.firstOrNull { it.startEpochSec >= program.endEpochSec }
                             if (nextProg != null) {
-                                val nextTime = timeFormat.format(Date(nextProg.startEpochSec * 1000))
+                                val nextStart = timeFormat.format(Date(nextProg.startEpochSec * 1000))
+                                val nextEnd = timeFormat.format(Date(nextProg.endEpochSec * 1000))
                                 Text(
-                                    "Up Next: ${nextProg.title ?: ""} · $nextTime",
+                                    "Up Next: ${nextProg.title ?: ""} · $nextStart–$nextEnd",
                                     fontSize = 13.sp, color = PlexTextTertiary
                                 )
                             }
@@ -1383,6 +1402,7 @@ private fun MultiViewPane(
 private fun PlexNavRail(
     visible: Boolean,
     userInitial: String,
+    focusedIndex: Int = 0,
     onHome: () -> Unit,
     onWhereToWatch: () -> Unit,
     onSportsCalendar: () -> Unit,
@@ -1421,22 +1441,22 @@ private fun PlexNavRail(
             DividerLine()
             Spacer(Modifier.height(8.dp))
 
-            // Main items
-            NavRailIcon(Icons.Filled.Home, "Home", onHome, isActive = false)
-            NavRailIcon(Icons.Filled.Search, "Where to Watch", onWhereToWatch, isActive = false)
-            NavRailIcon(Icons.Filled.CalendarMonth, "Sports", onSportsCalendar, isActive = false)
-            NavRailIcon(Icons.Filled.VideoLibrary, "Recordings", onRecordings, isActive = false)
-            NavRailIcon(Icons.AutoMirrored.Filled.PlaylistPlay, "Custom", onCustomChannels, isActive = false)
+            // Main items — index 0..4
+            NavRailIcon(Icons.Filled.Home, "Home", onHome, isActive = false, isFocusedByIndex = focusedIndex == 0)
+            NavRailIcon(Icons.Filled.Search, "Where to Watch", onWhereToWatch, isActive = false, isFocusedByIndex = focusedIndex == 1)
+            NavRailIcon(Icons.Filled.CalendarMonth, "Sports", onSportsCalendar, isActive = false, isFocusedByIndex = focusedIndex == 2)
+            NavRailIcon(Icons.Filled.VideoLibrary, "Recordings", onRecordings, isActive = false, isFocusedByIndex = focusedIndex == 3)
+            NavRailIcon(Icons.AutoMirrored.Filled.PlaylistPlay, "Custom", onCustomChannels, isActive = false, isFocusedByIndex = focusedIndex == 4)
 
             Spacer(Modifier.height(8.dp))
             DividerLine()
             Spacer(Modifier.height(8.dp))
 
-            NavRailIcon(Icons.Filled.LiveTv, "Live TV", onLiveTV, isActive = true)
+            NavRailIcon(Icons.Filled.LiveTv, "Live TV", onLiveTV, isActive = true, isFocusedByIndex = focusedIndex == 5)
 
             Spacer(Modifier.weight(1f))
 
-            NavRailIcon(Icons.Filled.Settings, "Settings", onSettings, isActive = false)
+            NavRailIcon(Icons.Filled.Settings, "Settings", onSettings, isActive = false, isFocusedByIndex = focusedIndex == 6)
         }
     }
 }
@@ -1457,9 +1477,11 @@ private fun NavRailIcon(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    isActive: Boolean
+    isActive: Boolean,
+    isFocusedByIndex: Boolean = false
 ) {
     var focused by remember { mutableStateOf(false) }
+    val highlight = focused || isFocusedByIndex
     Surface(
         onClick = onClick,
         modifier = Modifier
@@ -1468,10 +1490,13 @@ private fun NavRailIcon(
             .onFocusChanged { focused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isActive) PlexCard else Color.Transparent,
+            containerColor = if (highlight || isActive) PlexCard else Color.Transparent,
             focusedContainerColor = PlexCard
         ),
         border = ClickableSurfaceDefaults.border(
+            border = if (isFocusedByIndex) androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, PlexTextPrimary)
+            ) else androidx.tv.material3.Border.None,
             focusedBorder = androidx.tv.material3.Border(
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, PlexTextPrimary)
             )
@@ -1485,7 +1510,7 @@ private fun NavRailIcon(
             Icon(
                 icon, label,
                 tint = when {
-                    focused -> PlexTextPrimary
+                    highlight -> PlexTextPrimary
                     isActive -> PlexAccent
                     else -> PlexTextTertiary
                 },

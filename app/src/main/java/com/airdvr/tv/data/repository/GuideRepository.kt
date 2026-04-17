@@ -38,7 +38,10 @@ class GuideRepository {
 
     suspend fun getChannelsWithPrograms(): Result<Pair<List<Channel>, List<EpgProgram>>> {
         return try {
-            val response = api.getGuide()
+            val now = java.time.Instant.now()
+            val start = now.minusSeconds(3600).toString()
+            val end = now.plusSeconds(12 * 3600).toString()
+            val response = api.getGuide(start = start, end = end)
             if (response.isSuccessful) {
                 val body = response.body()
                 val channels = body?.channels ?: emptyList()

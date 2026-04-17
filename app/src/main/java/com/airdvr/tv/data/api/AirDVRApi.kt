@@ -14,7 +14,10 @@ interface AirDVRApi {
     suspend fun refresh(@Body request: RefreshRequest): Response<AuthResponse>
 
     @GET("api/guide")
-    suspend fun getGuide(): Response<GuideResponse>
+    suspend fun getGuide(
+        @Query("start") start: String? = null,
+        @Query("end") end: String? = null
+    ): Response<GuideResponse>
 
     @GET("api/recordings")
     suspend fun getRecordings(): Response<JsonElement>

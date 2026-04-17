@@ -63,6 +63,7 @@ data class LiveTVUiState(
 
     // Nav rail
     val navRailVisible: Boolean = false,
+    val navRailFocusedIndex: Int = 0,
 
     // Fullscreen overlay (UP press: action buttons + show details + artwork)
     val showFullscreenOverlay: Boolean = false,
@@ -203,7 +204,12 @@ class LiveTVViewModel : ViewModel() {
             } catch (_: Exception) {}
 
             guideRepo.getChannelsWithPrograms().onSuccess { (channels, programs) ->
-                val sorted = channels.sortedBy { it.guideNumber?.toDoubleOrNull() ?: Double.MAX_VALUE }
+                val sorted = channels.sortedBy { ch ->
+                    val parts = ch.guideNumber?.split(".") ?: return@sortedBy Double.MAX_VALUE
+                    val major = parts.getOrNull(0)?.toDoubleOrNull() ?: return@sortedBy Double.MAX_VALUE
+                    val minor = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
+                    major * 1000 + minor
+                }
                 val grouped = if (programs.any { it.guideNumber != null }) {
                     programs.filter { it.guideNumber != null }.groupBy { it.guideNumber!! }
                 } else {
@@ -432,11 +438,26 @@ class LiveTVViewModel : ViewModel() {
     }
 
     fun showNavRail() {
-        _uiState.value = _uiState.value.copy(navRailVisible = true)
+        _uiState.value = _uiState.value.copy(navRailVisible = true, navRailFocusedIndex = 0)
     }
 
     fun hideNavRail() {
         _uiState.value = _uiState.value.copy(navRailVisible = false)
+    }
+
+    fun navRailUp() {
+        val s = _uiState.value
+        if (s.navRailFocusedIndex > 0) {
+            _uiState.value = s.copy(navRailFocusedIndex = s.navRailFocusedIndex - 1)
+        }
+    }
+
+    fun navRailDown() {
+        val s = _uiState.value
+        // 7 items: Home, Where to Watch, Sports, Recordings, Custom, Live TV, Settings
+        if (s.navRailFocusedIndex < 6) {
+            _uiState.value = s.copy(navRailFocusedIndex = s.navRailFocusedIndex + 1)
+        }
     }
 
     // ── Fullscreen UP overlay ───────────────────────────────────────────────

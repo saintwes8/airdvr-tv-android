@@ -111,6 +111,21 @@ fun HomeScreen(
                         }
                     }
 
+                    if (uiState.upcoming.isNotEmpty()) {
+                        item {
+                            RowSection(title = "Upcoming") {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp)
+                                ) {
+                                    items(uiState.upcoming) { entry ->
+                                        UpcomingCard(entry = entry, onClick = onNavigateLiveTV)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (uiState.recordings.isNotEmpty()) {
                         item {
                             RowSection(title = "Recordings") {
@@ -123,21 +138,6 @@ fun HomeScreen(
                                             recording = recording,
                                             onClick = { onNavigatePlayer(recording.id ?: "") }
                                         )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (uiState.upcoming.isNotEmpty()) {
-                        item {
-                            RowSection(title = "Upcoming") {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    contentPadding = PaddingValues(start = 24.dp, end = 24.dp)
-                                ) {
-                                    items(uiState.upcoming) { entry ->
-                                        UpcomingCard(entry = entry, onClick = onNavigateLiveTV)
                                     }
                                 }
                             }
@@ -409,6 +409,7 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "rps")
     val isUnwatched = recording.resumePositionSec == 0
+    val posterUrl = rememberPosterUrl(recording.title)
 
     Surface(
         onClick = onClick,
@@ -428,6 +429,15 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // Poster image
+            if (!posterUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = posterUrl,
+                    contentDescription = recording.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
             // Bottom gradient
             Box(
                 modifier = Modifier
@@ -552,8 +562,13 @@ private fun NavRailIcon(
             .onFocusChanged { focused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent
+            containerColor = if (isActive) PlexCard else Color.Transparent,
+            focusedContainerColor = PlexCard
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = Border(
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, PlexTextPrimary)
+            )
         )
     ) {
         Row(
@@ -564,7 +579,8 @@ private fun NavRailIcon(
             Icon(
                 icon, label,
                 tint = when {
-                    focused || isActive -> PlexAccent
+                    focused -> PlexTextPrimary
+                    isActive -> PlexAccent
                     else -> PlexTextTertiary
                 },
                 modifier = Modifier.size(22.dp)
