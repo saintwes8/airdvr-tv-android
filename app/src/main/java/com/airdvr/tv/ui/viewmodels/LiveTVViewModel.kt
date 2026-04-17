@@ -230,7 +230,7 @@ class LiveTVViewModel : ViewModel() {
 
     // ── Tuning ──────────────────────────────────────────────────────────────
 
-    private fun tuneToChannel(channel: Channel) {
+    fun tuneToChannel(channel: Channel) {
         if (channel.guideNumber.isNullOrBlank()) return
         val quality = guidePrefsManager.quality.value
         val url = streamRepo.getStreamUrl(channel.guideNumber, quality)

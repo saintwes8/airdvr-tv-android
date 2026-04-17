@@ -22,9 +22,11 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -103,6 +105,11 @@ fun LiveTVScreen(
     val context = LocalContext.current
     val tokenManager = remember { AirDVRApp.instance.tokenManager }
     val focusRequester = remember { FocusRequester() }
+
+    // Record dialog state for future programs in guide
+    var showRecordDialog by remember { mutableStateOf(false) }
+    var recordDialogProgram by remember { mutableStateOf<EpgProgram?>(null) }
+    var recordDialogChannel by remember { mutableStateOf<Channel?>(null) }
 
     // ── ExoPlayer setup ────────────────────────────────────────────────────
     val loadControl = remember {
@@ -185,6 +192,20 @@ fun LiveTVScreen(
             .onKeyEvent { keyEvent ->
                 if (keyEvent.type != KeyEventType.KeyDown) return@onKeyEvent false
                 val code = keyEvent.nativeKeyEvent.keyCode
+                // Intercept guide center-press for future programs
+                if (uiState.mode == ScreenMode.GUIDE && !uiState.categoriesFocused &&
+                    (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    val now = System.currentTimeMillis() / 1000
+                    val prog = uiState.focusedProgram
+                    val ch = uiState.focusedChannel
+                    if (prog != null && ch != null && prog.startEpochSec > now) {
+                        recordDialogProgram = prog
+                        recordDialogChannel = ch
+                        showRecordDialog = true
+                        return@onKeyEvent true
+                    }
+                }
                 handleKey(code, uiState, viewModel, onNavigateHome)
             }
     ) {
@@ -236,6 +257,55 @@ fun LiveTVScreen(
                     Text(msg, color = PlexTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
             }
+        }
+
+        // Record dialog for future programs
+        if (showRecordDialog && recordDialogProgram != null && recordDialogChannel != null) {
+            val prog = recordDialogProgram!!
+            val ch = recordDialogChannel!!
+            val tf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+            AlertDialog(
+                onDismissRequest = { showRecordDialog = false },
+                containerColor = PlexCard,
+                title = {
+                    androidx.compose.material3.Text(
+                        prog.title ?: "", color = PlexTextPrimary, fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        androidx.compose.material3.Text(
+                            "CH ${ch.guideNumber ?: ""} ${ch.guideName ?: ""}",
+                            color = PlexTextSecondary, fontSize = 14.sp
+                        )
+                        androidx.compose.material3.Text(
+                            "${tf.format(Date(prog.startEpochSec * 1000))} - ${tf.format(Date(prog.endEpochSec * 1000))}",
+                            color = PlexTextSecondary, fontSize = 14.sp
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.scheduleProgram(ch, prog)
+                        showRecordDialog = false
+                    }) {
+                        androidx.compose.material3.Text("Record", color = Color(0xFFEF4444))
+                    }
+                },
+                dismissButton = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = {
+                            viewModel.tuneToChannel(ch)
+                            showRecordDialog = false
+                        }) {
+                            androidx.compose.material3.Text("Watch Channel", color = PlexTextPrimary)
+                        }
+                        TextButton(onClick = { showRecordDialog = false }) {
+                            androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
+                        }
+                    }
+                }
+            )
         }
 
         // Slim nav rail (only over fullscreen, slides in from left)
@@ -785,10 +855,10 @@ private fun GuideRow(
                                             )
                                     )
                                 }
-                                if (prog.isNew) {
-                                    Box(Modifier.background(PlexTextPrimary, RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
-                                        Text("NEW", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = PlexBg)
-                                    }
+                                // HD badge for .1 channels
+                                val chSuffix = channel.guideNumber?.substringAfter(".", "")
+                                if (chSuffix == "1" || chSuffix == "") {
+                                    Text("HD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextTertiary)
                                 }
                             }
                             Text(
@@ -895,6 +965,7 @@ private fun FullscreenLayout(
             FullscreenActionOverlay(
                 channel = uiState.currentChannel,
                 program = uiState.currentProgram,
+                programs = uiState.programsByChannel[uiState.currentChannel?.guideNumber ?: ""],
                 isMuted = uiState.isMuted,
                 ccEnabled = uiState.ccEnabled,
                 selectedIndex = uiState.actionButtonIndex,
@@ -975,6 +1046,7 @@ private fun SlimNowPlayingBar(
 private fun FullscreenActionOverlay(
     channel: Channel?,
     program: EpgProgram?,
+    programs: List<EpgProgram>? = null,
     isMuted: Boolean,
     ccEnabled: Boolean,
     selectedIndex: Int,
@@ -1031,7 +1103,9 @@ private fun FullscreenActionOverlay(
                         val e = timeFormat.format(Date(program.endEpochSec * 1000))
                         parts.add("$s - $e")
                         program.category?.let { if (it.isNotBlank()) parts.add(it) }
-                        if (program.isNew) parts.add("NEW")
+                        // HD indicator
+                        val chSuffix = channel?.guideNumber?.substringAfter(".", "")
+                        if (chSuffix == "1" || chSuffix == "") parts.add("HD")
                         Text(parts.joinToString("  ·  "), fontSize = 13.sp, color = PlexTextSecondary)
                         if (!program.summary.isNullOrBlank()) {
                             Text(
@@ -1039,6 +1113,18 @@ private fun FullscreenActionOverlay(
                                 fontSize = 14.sp, color = PlexTextSecondary,
                                 maxLines = 3, overflow = TextOverflow.Ellipsis
                             )
+                        }
+                        // Up Next
+                        if (channel != null) {
+                            val chNum = channel.guideNumber ?: ""
+                            val nextProg = programs?.firstOrNull { it.startEpochSec >= program.endEpochSec }
+                            if (nextProg != null) {
+                                val nextTime = timeFormat.format(Date(nextProg.startEpochSec * 1000))
+                                Text(
+                                    "Up Next: ${nextProg.title ?: ""} · $nextTime",
+                                    fontSize = 13.sp, color = PlexTextTertiary
+                                )
+                            }
                         }
                     }
                 }
@@ -1382,8 +1468,13 @@ private fun NavRailIcon(
             .onFocusChanged { focused = it.isFocused },
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color.Transparent,
-            focusedContainerColor = Color.Transparent
+            containerColor = if (isActive) PlexCard else Color.Transparent,
+            focusedContainerColor = PlexCard
+        ),
+        border = ClickableSurfaceDefaults.border(
+            focusedBorder = androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, PlexTextPrimary)
+            )
         )
     ) {
         Row(
@@ -1394,7 +1485,8 @@ private fun NavRailIcon(
             Icon(
                 icon, label,
                 tint = when {
-                    focused || isActive -> PlexAccent
+                    focused -> PlexTextPrimary
+                    isActive -> PlexAccent
                     else -> PlexTextTertiary
                 },
                 modifier = Modifier.size(22.dp)
