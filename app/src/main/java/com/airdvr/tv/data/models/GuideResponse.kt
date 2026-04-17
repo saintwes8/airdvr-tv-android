@@ -118,7 +118,9 @@ data class PopularArtworkResponse(
 data class UserProfile(
     @SerializedName("email") val email: String? = null,
     @SerializedName("zip_code") val zipCode: String? = null,
-    @SerializedName("created_at") val createdAt: String? = null
+    @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("storage_preference") val storagePreference: String? = null,
+    @SerializedName("plan") val plan: String? = null
 )
 
 data class SetZipRequest(
@@ -142,7 +144,8 @@ data class ScheduleRequest(
     @SerializedName("title") val title: String,
     @SerializedName("start_time") val startTime: String,
     @SerializedName("end_time") val endTime: String,
-    @SerializedName("type") val type: String
+    @SerializedName("type") val type: String,
+    @SerializedName("storage_preference") val storagePreference: String? = null
 )
 
 // ── Recording stream (cloud playback) ───────────────────────────────────

@@ -65,7 +65,12 @@ class HomeViewModel : ViewModel() {
                 var newState = _uiState.value.copy(isLoading = false)
 
                 guideResult.onSuccess { (channels, programs) ->
-                    val sorted = channels.sortedBy { it.guideNumber?.toDoubleOrNull() ?: Double.MAX_VALUE }
+                    val sorted = channels.sortedBy { ch ->
+                        val parts = ch.guideNumber?.split(".") ?: return@sortedBy Double.MAX_VALUE
+                        val major = parts.getOrNull(0)?.toDoubleOrNull() ?: return@sortedBy Double.MAX_VALUE
+                        val minor = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
+                        major * 1000 + minor
+                    }
                     val byChannel = if (programs.any { it.guideNumber != null }) {
                         programs.filter { it.guideNumber != null }.groupBy { it.guideNumber!! }
                     } else emptyMap()

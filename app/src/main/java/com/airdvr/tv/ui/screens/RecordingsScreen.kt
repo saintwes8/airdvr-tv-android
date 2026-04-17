@@ -57,6 +57,7 @@ fun RecordingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<Recording?>(null) }
     var cancelTarget by remember { mutableStateOf<RecordingSchedule?>(null) }
+    var optionsTarget by remember { mutableStateOf<Recording?>(null) }
 
     Column(
         modifier = Modifier.fillMaxSize().background(PlexBg)
@@ -177,7 +178,7 @@ fun RecordingsScreen(
                                         onNavigatePlayer(recording.id ?: "", url)
                                     }
                                 },
-                                onLongPress = { deleteTarget = recording }
+                                onLongPress = { optionsTarget = recording }
                             )
                         }
                     }
@@ -260,6 +261,67 @@ fun RecordingsScreen(
             dismissButton = {
                 TextButton(onClick = { cancelTarget = null }) {
                     androidx.compose.material3.Text("Keep", color = PlexTextSecondary)
+                }
+            }
+        )
+    }
+
+    // Recording options dialog (long-press)
+    if (optionsTarget != null) {
+        val rec = optionsTarget!!
+        val isCloud = rec.storageType?.lowercase() == "cloud"
+        AlertDialog(
+            onDismissRequest = { optionsTarget = null },
+            containerColor = PlexCard,
+            title = {
+                androidx.compose.material3.Text(
+                    rec.title ?: "Recording",
+                    color = PlexTextPrimary, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (isCloud) {
+                        androidx.compose.material3.Text(
+                            "Storage: Cloud",
+                            color = PlexTextSecondary, fontSize = 13.sp
+                        )
+                    } else {
+                        androidx.compose.material3.Text(
+                            "Storage: Local",
+                            color = PlexTextSecondary, fontSize = 13.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (isCloud) {
+                        TextButton(onClick = {
+                            viewModel.showToast("Coming soon")
+                            optionsTarget = null
+                        }) {
+                            androidx.compose.material3.Text("Download Local Copy", color = PlexTextPrimary)
+                        }
+                    } else {
+                        TextButton(onClick = {
+                            viewModel.showToast("Coming soon")
+                            optionsTarget = null
+                        }) {
+                            androidx.compose.material3.Text("Upload to Cloud", color = PlexTextPrimary)
+                        }
+                    }
+                    TextButton(onClick = {
+                        deleteTarget = rec
+                        optionsTarget = null
+                    }) {
+                        androidx.compose.material3.Text("Delete", color = Color(0xFFEF4444))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { optionsTarget = null }) {
+                    androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
                 }
             }
         )

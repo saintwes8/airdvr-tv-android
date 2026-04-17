@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -274,11 +275,12 @@ fun LiveTVScreen(
             }
         }
 
-        // Record dialog for future programs
+        // Record dialog for programs in guide
         if (showRecordDialog && recordDialogProgram != null && recordDialogChannel != null) {
             val prog = recordDialogProgram!!
             val ch = recordDialogChannel!!
             val tf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+            var selectedStorage by remember { mutableStateOf(uiState.defaultStoragePreference) }
             AlertDialog(
                 onDismissRequest = { showRecordDialog = false },
                 containerColor = PlexCard,
@@ -288,36 +290,54 @@ fun LiveTVScreen(
                     )
                 },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         androidx.compose.material3.Text(
                             "CH ${ch.guideNumber ?: ""} ${ch.guideName ?: ""}",
                             color = PlexTextSecondary, fontSize = 14.sp
                         )
                         androidx.compose.material3.Text(
-                            "${tf.format(Date(prog.startEpochSec * 1000))} - ${tf.format(Date(prog.endEpochSec * 1000))}",
+                            "${tf.format(Date(prog.startEpochSec * 1000))} – ${tf.format(Date(prog.endEpochSec * 1000))}",
                             color = PlexTextSecondary, fontSize = 14.sp
                         )
+                        // Storage toggle
+                        Spacer(Modifier.height(4.dp))
+                        androidx.compose.material3.Text(
+                            "Save to:", color = PlexTextTertiary, fontSize = 12.sp
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            StorageChip("Local", selectedStorage == "local") { selectedStorage = "local" }
+                            StorageChip("Cloud", selectedStorage == "cloud") { selectedStorage = "cloud" }
+                        }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        viewModel.scheduleProgram(ch, prog)
-                        showRecordDialog = false
-                    }) {
-                        androidx.compose.material3.Text("Record", color = Color(0xFFEF4444))
-                    }
-                },
-                dismissButton = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // Watch Now — primary action
                         TextButton(onClick = {
                             viewModel.tuneToChannel(ch)
                             showRecordDialog = false
                         }) {
-                            androidx.compose.material3.Text("Watch Channel", color = PlexTextPrimary)
+                            androidx.compose.material3.Text("Watch Now", color = PlexAccent, fontWeight = FontWeight.Bold)
                         }
-                        TextButton(onClick = { showRecordDialog = false }) {
-                            androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
+                        // Record Once
+                        TextButton(onClick = {
+                            viewModel.scheduleProgramWithStorage(ch, prog, selectedStorage)
+                            showRecordDialog = false
+                        }) {
+                            androidx.compose.material3.Text("Record Once", color = Color(0xFFEF4444))
                         }
+                        // Record Series
+                        TextButton(onClick = {
+                            viewModel.scheduleProgramWithStorage(ch, prog, selectedStorage)
+                            showRecordDialog = false
+                        }) {
+                            androidx.compose.material3.Text("Record Series", color = Color(0xFFEF4444))
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRecordDialog = false }) {
+                        androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
                     }
                 }
             )
@@ -1517,5 +1537,30 @@ private fun NavRailIcon(
                 modifier = Modifier.size(22.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun StorageChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(
+                if (isSelected) PlexAccent.copy(alpha = 0.2f) else PlexSurface,
+                RoundedCornerShape(6.dp)
+            )
+            .border(
+                1.dp,
+                if (isSelected) PlexAccent else PlexBorder,
+                RoundedCornerShape(6.dp)
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+    ) {
+        androidx.compose.material3.Text(
+            label,
+            fontSize = 13.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (isSelected) PlexAccent else PlexTextSecondary
+        )
     }
 }

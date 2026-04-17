@@ -88,7 +88,11 @@ data class LiveTVUiState(
     val userInitial: String = "",
 
     // Recording schedules
-    val schedules: List<RecordingSchedule> = emptyList()
+    val schedules: List<RecordingSchedule> = emptyList(),
+
+    // User storage preference
+    val defaultStoragePreference: String = "local",
+    val userPlan: String = "free"
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -191,9 +195,10 @@ class LiveTVViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
 
-            // Load channel logos and schedules in parallel
+            // Load channel logos, schedules, and user profile in parallel
             launch { ChannelLogoRepository.loadLogos() }
             launch { fetchSchedules() }
+            launch { fetchUserProfile() }
 
             try {
                 val resp = api.getTuners()
@@ -699,6 +704,21 @@ class LiveTVViewModel : ViewModel() {
         }
     }
 
+    // ── User Profile ───────────────────────────────────────────────────────
+
+    private suspend fun fetchUserProfile() {
+        try {
+            val resp = api.getUserProfile()
+            if (resp.isSuccessful) {
+                val profile = resp.body()
+                _uiState.value = _uiState.value.copy(
+                    defaultStoragePreference = profile?.storagePreference ?: "local",
+                    userPlan = profile?.plan ?: "free"
+                )
+            }
+        } catch (_: Exception) { }
+    }
+
     // ── Recording ───────────────────────────────────────────────────────────
 
     private suspend fun fetchSchedules() {
@@ -747,6 +767,11 @@ class LiveTVViewModel : ViewModel() {
 
     /** Schedule a recording for a specific program (from guide grid). */
     fun scheduleProgram(channel: Channel, program: EpgProgram) {
+        scheduleProgramWithStorage(channel, program, null)
+    }
+
+    /** Schedule a recording with a specific storage preference. */
+    fun scheduleProgramWithStorage(channel: Channel, program: EpgProgram, storage: String?) {
         val channelNumber = channel.guideNumber ?: return
         val title = program.title ?: "Recording"
         val now = System.currentTimeMillis() / 1000
@@ -755,10 +780,16 @@ class LiveTVViewModel : ViewModel() {
         val endTime = program.endTime ?: return
         val type = if (isAiring) "manual" else "once"
 
+        // Validate cloud storage requires Pro
+        val actualStorage = if (storage == "cloud" && _uiState.value.userPlan.lowercase() !in listOf("pro", "premium")) {
+            showToast("Cloud storage requires Pro subscription")
+            "local"
+        } else storage
+
         viewModelScope.launch {
             try {
                 val resp = api.scheduleRecording(
-                    ScheduleRequest(channelNumber, title, startTime, endTime, type)
+                    ScheduleRequest(channelNumber, title, startTime, endTime, type, storagePreference = actualStorage)
                 )
                 if (resp.isSuccessful) {
                     val msg = if (isAiring) "Recording started: $title" else "Recording scheduled: $title"

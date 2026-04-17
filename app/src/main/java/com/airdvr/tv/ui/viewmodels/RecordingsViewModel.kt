@@ -153,7 +153,7 @@ class RecordingsViewModel : ViewModel() {
         )
     }
 
-    private fun showToast(message: String) {
+    fun showToast(message: String) {
         _uiState.value = _uiState.value.copy(toastMessage = message)
         viewModelScope.launch {
             kotlinx.coroutines.delay(3000)
