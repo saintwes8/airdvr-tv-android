@@ -1,10 +1,13 @@
 package com.airdvr.tv.ui.viewmodels
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Recording
 import com.airdvr.tv.data.repository.RecordingsRepository
 import com.airdvr.tv.data.repository.StreamRepository
+import com.airdvr.tv.util.Constants
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,6 +30,7 @@ class PlayerViewModel : ViewModel() {
 
     private val recordingsRepo = RecordingsRepository()
     private val streamRepo = StreamRepository()
+    private val api = ApiClient.api
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -37,8 +41,44 @@ class PlayerViewModel : ViewModel() {
             recordingsRepo.getRecordings().onSuccess { recordings ->
                 val recording = recordings.find { it.id == recordingId }
                 if (recording != null) {
-                    val streamUrl = preResolvedUrl ?: streamRepo.getRecordingStreamUrl(recordingId)
                     val resumeMs = recording.resumePositionSec * 1000L
+                    val streamUrl = if (preResolvedUrl != null) {
+                        Log.d("PLAYBACK", "Using pre-resolved URL: $preResolvedUrl")
+                        preResolvedUrl
+                    } else if (recording.storageType == "cloud") {
+                        // Cloud recording: fetch signed URL from API
+                        try {
+                            val resp = api.getRecordingStream(recordingId)
+                            if (resp.isSuccessful) {
+                                val url = resp.body()?.url
+                                Log.d("PLAYBACK", "Cloud stream URL: $url")
+                                url
+                            } else {
+                                Log.d("PLAYBACK", "Cloud stream API error: ${resp.code()}")
+                                _uiState.value = _uiState.value.copy(
+                                    isLoading = false,
+                                    error = if (resp.code() == 403) "Cloud playback requires Pro subscription"
+                                            else "Could not load recording (${resp.code()})"
+                                )
+                                return@onSuccess
+                            }
+                        } catch (e: Exception) {
+                            Log.d("PLAYBACK", "Cloud stream exception: ${e.message}")
+                            _uiState.value = _uiState.value.copy(isLoading = false, error = "Network error: ${e.message}")
+                            return@onSuccess
+                        }
+                    } else {
+                        // Local recording: stream through tunnel via HLS
+                        val url = "${Constants.BASE_URL}api/stream/recording/$recordingId/stream.m3u8"
+                        Log.d("PLAYBACK", "Local stream URL: $url")
+                        url
+                    }
+
+                    if (streamUrl == null) {
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not get playback URL")
+                        return@onSuccess
+                    }
+
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         recording = recording,

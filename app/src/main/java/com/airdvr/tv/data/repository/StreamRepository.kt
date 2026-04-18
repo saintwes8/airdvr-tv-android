@@ -12,6 +12,6 @@ class StreamRepository {
 
     fun getRecordingStreamUrl(recordingId: String?): String {
         if (recordingId.isNullOrBlank()) return ""
-        return "${Constants.BASE_URL}api/recordings/${recordingId}/stream.m3u8"
+        return "${Constants.BASE_URL}api/stream/recording/${recordingId}/stream.m3u8"
     }
 }

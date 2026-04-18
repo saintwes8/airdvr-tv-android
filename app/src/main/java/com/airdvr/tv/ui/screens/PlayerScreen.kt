@@ -1,5 +1,6 @@
 package com.airdvr.tv.ui.screens
 
+import android.util.Log
 import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.compose.animation.*
@@ -91,11 +92,14 @@ fun PlayerScreen(
 
     LaunchedEffect(uiState.streamUrl) {
         val url = uiState.streamUrl ?: return@LaunchedEffect
+        Log.d("PLAYBACK", "Loading URL: $url")
         val token = tokenManager.getAccessToken()
         val headers = if (token != null) mapOf("Authorization" to "Bearer $token") else emptyMap()
         val factory = DefaultHttpDataSource.Factory()
             .apply { if (headers.isNotEmpty()) setDefaultRequestProperties(headers) }
-        val src = if (url.contains(".m3u8")) {
+        val isHls = url.contains(".m3u8")
+        Log.d("PLAYBACK", "Source type: ${if (isHls) "HLS" else "Progressive"}")
+        val src = if (isHls) {
             HlsMediaSource.Factory(factory)
                 .setAllowChunklessPreparation(true)
                 .createMediaSource(MediaItem.fromUri(url))

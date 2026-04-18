@@ -291,20 +291,16 @@ class LiveTVViewModel : ViewModel() {
      */
     fun navigateLeft(): Boolean {
         val s = _uiState.value
-        val now = System.currentTimeMillis() / 1000
         val chNum = s.focusedChannel?.guideNumber ?: return false
         val programs = s.programsByChannel[chNum]?.sortedBy { it.startEpochSec } ?: return false
         val current = programs.firstOrNull {
             it.startEpochSec <= s.focusTimeEpoch && s.focusTimeEpoch < it.endEpochSec
         }
         if (current != null) {
-            // Find previous program that ends after now (to keep focus inside the visible window)
-            val prevProg = programs.lastOrNull {
-                it.endEpochSec <= current.startEpochSec && it.endEpochSec > now
-            }
+            val prevProg = programs.lastOrNull { it.endEpochSec <= current.startEpochSec }
             if (prevProg != null) {
-                val newFocus = maxOf(prevProg.startEpochSec, now) + 1
-                _uiState.value = s.copy(focusTimeEpoch = newFocus)
+                _uiState.value = s.copy(focusTimeEpoch = prevProg.startEpochSec + 1)
+                adjustTimeWindow()
                 return true
             }
             // Already on the leftmost program — exit to fullscreen
@@ -337,12 +333,14 @@ class LiveTVViewModel : ViewModel() {
 
     private fun adjustTimeWindow() {
         val s = _uiState.value
-        val now = System.currentTimeMillis() / 1000
         val windowEnd = s.timeWindowStartEpoch + s.visibleDurationSec
         if (s.focusTimeEpoch >= windowEnd - 900) {
             // Push the window forward so the focused program stays visible.
-            // Window start never goes earlier than NOW.
-            val newStart = maxOf(now, s.focusTimeEpoch - s.visibleDurationSec / 2)
+            val newStart = floorTo30Min(s.focusTimeEpoch - s.visibleDurationSec / 2)
+            _uiState.value = s.copy(timeWindowStartEpoch = newStart)
+        } else if (s.focusTimeEpoch < s.timeWindowStartEpoch) {
+            // Scroll backward when focus is before the window start
+            val newStart = floorTo30Min(s.focusTimeEpoch)
             _uiState.value = s.copy(timeWindowStartEpoch = newStart)
         }
     }
