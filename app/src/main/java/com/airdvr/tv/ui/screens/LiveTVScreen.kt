@@ -822,8 +822,8 @@ private fun GuideRow(
             val totalW = maxWidth.value
             val windowEnd = timeWindowStart + visibleDurationSec
             val sorted = programs.sortedBy { it.startEpochSec }
-            // Trim past shows: only programs that end after NOW
-            val visible = sorted.filter { it.endEpochSec > now && it.startEpochSec < windowEnd }
+            // Show programs that overlap with the current viewport window
+            val visible = sorted.filter { it.endEpochSec > timeWindowStart && it.startEpochSec < windowEnd }
 
             if (visible.isEmpty()) {
                 Box(
@@ -837,13 +837,8 @@ private fun GuideRow(
                 visible.forEachIndexed { programIndex, prog ->
                     key("${channel.guideNumber}_${prog.programId ?: programIndex}") {
                     val isCurrentlyAiring = prog.startEpochSec <= now && now < prog.endEpochSec
-                    // Currently airing: flush left (x=0). Future: snap to nearest slot boundary.
-                    val cs = if (isCurrentlyAiring) {
-                        timeWindowStart
-                    } else {
-                        val raw = maxOf(prog.startEpochSec, timeWindowStart)
-                        raw - (raw % SLOT_SEC) // snap down to slot boundary
-                    }
+                    // Clamp program start/end to viewport bounds
+                    val cs = maxOf(prog.startEpochSec, timeWindowStart)
                     val ce = minOf(prog.endEpochSec, windowEnd)
                     val xOff = ((cs - timeWindowStart).toFloat() / visibleDurationSec * totalW).dp
                     val cellW = ((ce - cs).toFloat() / visibleDurationSec * totalW).dp.coerceAtLeast(36.dp)
