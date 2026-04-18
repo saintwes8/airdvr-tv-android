@@ -16,7 +16,9 @@ interface AirDVRApi {
     @GET("api/guide")
     suspend fun getGuide(
         @Query("start") start: String? = null,
-        @Query("end") end: String? = null
+        @Query("end") end: String? = null,
+        @Query("hours") hours: Int? = null,
+        @Query("limit") limit: Int? = null
     ): Response<GuideResponse>
 
     @GET("api/recordings")

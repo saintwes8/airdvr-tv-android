@@ -8,6 +8,7 @@ import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
+import android.util.Log
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.StreamRepository
@@ -224,6 +225,14 @@ class LiveTVViewModel : ViewModel() {
                     sorted.mapIndexed { idx, ch ->
                         (ch.guideNumber ?: "") to (perChannel.getOrNull(idx) ?: emptyList())
                     }.toMap()
+                }
+                // Log programs per channel to verify 24h data
+                val sampleCh = sorted.firstOrNull()?.guideNumber ?: ""
+                val sampleProgs = grouped[sampleCh] ?: emptyList()
+                if (sampleProgs.isNotEmpty()) {
+                    val earliest = sampleProgs.minOf { it.startEpochSec }
+                    val latest = sampleProgs.maxOf { it.endEpochSec }
+                    Log.d("GUIDE", "Channel $sampleCh: ${sampleProgs.size} programs, ${(latest - earliest) / 3600.0}h range")
                 }
                 _uiState.value = _uiState.value.copy(
                     channels = sorted,
