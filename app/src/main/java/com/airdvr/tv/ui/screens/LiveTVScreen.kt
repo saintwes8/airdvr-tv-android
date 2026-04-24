@@ -299,15 +299,6 @@ fun LiveTVScreen(
                             "${tf.format(Date(prog.startEpochSec * 1000))} – ${tf.format(Date(prog.endEpochSec * 1000))}",
                             color = PlexTextSecondary, fontSize = 14.sp
                         )
-                        // Storage toggle
-                        Spacer(Modifier.height(4.dp))
-                        androidx.compose.material3.Text(
-                            "Save to:", color = PlexTextTertiary, fontSize = 12.sp
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StorageChip("Local", selectedStorage == "local") { selectedStorage = "local" }
-                            StorageChip("Cloud", selectedStorage == "cloud") { selectedStorage = "cloud" }
-                        }
                     }
                 },
                 confirmButton = {
@@ -333,6 +324,13 @@ fun LiveTVScreen(
                         }) {
                             androidx.compose.material3.Text("Record Series", color = Color(0xFFEF4444))
                         }
+                        // Storage indicator + toggle (below Record buttons)
+                        Spacer(Modifier.height(6.dp))
+                        RecordStorageIndicator(
+                            selectedStorage = selectedStorage,
+                            canUseCloud = uiState.userPlan.lowercase() in listOf("pro", "premium"),
+                            onToggle = { next -> selectedStorage = next }
+                        )
                     }
                 },
                 dismissButton = {
@@ -1557,5 +1555,71 @@ private fun StorageChip(label: String, isSelected: Boolean, onClick: () -> Unit)
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (isSelected) PlexAccent else PlexTextSecondary
         )
+    }
+}
+
+/**
+ * Compact destination indicator shown below the Record buttons in the guide
+ * record dialog. Displays the resolved storage target with a per-recording
+ * toggle to swap between Local and Cloud (global preference is not affected).
+ */
+@Composable
+private fun RecordStorageIndicator(
+    selectedStorage: String,
+    canUseCloud: Boolean,
+    onToggle: (String) -> Unit
+) {
+    val isCloud = selectedStorage.lowercase() == "cloud"
+    val destinationLabel = if (isCloud) "Cloud" else "Local (Mac Mini)"
+    val next = if (isCloud) "local" else "cloud"
+    val toggleLabel = if (isCloud) "Use Local instead" else "Use Cloud instead"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(PlexSurface, RoundedCornerShape(6.dp))
+            .border(0.5.dp, PlexBorder, RoundedCornerShape(6.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier
+                    .background(
+                        if (isCloud) Color(0xFF22C55E).copy(alpha = 0.85f) else Color(0xFF6B7280).copy(alpha = 0.85f),
+                        RoundedCornerShape(3.dp)
+                    )
+                    .padding(horizontal = 5.dp, vertical = 1.dp)
+            ) {
+                androidx.compose.material3.Text(
+                    if (isCloud) "CLOUD" else "LOCAL",
+                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                    color = Color.White, letterSpacing = 0.4.sp
+                )
+            }
+            androidx.compose.material3.Text(
+                "Will save to: $destinationLabel",
+                fontSize = 12.sp, color = PlexTextSecondary
+            )
+        }
+        if (!isCloud && !canUseCloud) {
+            androidx.compose.material3.Text(
+                "Cloud requires Pro subscription",
+                fontSize = 11.sp, color = PlexTextTertiary
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .background(Color.Transparent, RoundedCornerShape(4.dp))
+                    .border(0.5.dp, PlexBorder, RoundedCornerShape(4.dp))
+                    .clickable { onToggle(next) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
+            ) {
+                androidx.compose.material3.Text(
+                    toggleLabel,
+                    fontSize = 11.sp, color = PlexAccent,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
     }
 }

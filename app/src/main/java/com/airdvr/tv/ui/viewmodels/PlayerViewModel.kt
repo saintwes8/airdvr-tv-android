@@ -55,11 +55,13 @@ class PlayerViewModel : ViewModel() {
                                 url
                             } else {
                                 Log.d("PLAYBACK", "Cloud stream API error: ${resp.code()}")
-                                _uiState.value = _uiState.value.copy(
-                                    isLoading = false,
-                                    error = if (resp.code() == 403) "Cloud playback requires Pro subscription"
-                                            else "Could not load recording (${resp.code()})"
-                                )
+                                val msg = when (resp.code()) {
+                                    403 -> "Cloud playback requires Pro"
+                                    409 -> "Recording not ready"
+                                    503 -> "DVR agent offline"
+                                    else -> "Could not load recording (${resp.code()})"
+                                }
+                                _uiState.value = _uiState.value.copy(isLoading = false, error = msg)
                                 return@onSuccess
                             }
                         } catch (e: Exception) {

@@ -5,8 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.SetZipRequest
 import com.airdvr.tv.data.models.StorageInfo
+import com.airdvr.tv.data.models.StoragePreferenceRequest
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.repository.AuthRepository
+import com.airdvr.tv.data.repository.RecordingsRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -21,20 +23,33 @@ data class SettingsUiState(
     val tunerTotal: Int = 2,
     val tunersInUse: Int = 0,
     val storageInfo: StorageInfo? = null,
+    val recordingsUsedMb: Float = 0f,
     val selectedQuality: String = "Auto",
     val guideOpacity: Float = 0.7f,
     val guideColor: String = "#21262D",
     val appVersion: String = "",
+    // Recording storage
+    val storagePreference: String = "local",
+    val deviceName: String = "",
+    val keepLocalCopyAfterCloud: Boolean = true,
+    val storageUpdating: Boolean = false,
     val error: String? = null,
     val toastMessage: String? = null
-)
+) {
+    val isPro: Boolean get() = userPlan.lowercase() in listOf("pro", "premium")
+    val uploadToCloud: Boolean get() = storagePreference.lowercase() == "cloud"
+}
 
 class SettingsViewModel : ViewModel() {
 
     private val authRepo = AuthRepository()
+    private val recordingsRepo = RecordingsRepository()
     private val api = ApiClient.api
     private val tokenManager = AirDVRApp.instance.tokenManager
     private val guidePrefsManager = AirDVRApp.instance.guidePreferencesManager
+    private val recordingPrefs = AirDVRApp.instance
+        .applicationContext
+        .getSharedPreferences("airdvr_recording_prefs", android.content.Context.MODE_PRIVATE)
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -44,7 +59,8 @@ class SettingsViewModel : ViewModel() {
             userEmail = tokenManager.getUserEmail(),
             selectedQuality = guidePrefsManager.quality.value,
             guideOpacity = guidePrefsManager.opacity.value,
-            guideColor = guidePrefsManager.color.value
+            guideColor = guidePrefsManager.color.value,
+            keepLocalCopyAfterCloud = recordingPrefs.getBoolean("keep_local_copy", true)
         )
         load()
     }
@@ -62,21 +78,37 @@ class SettingsViewModel : ViewModel() {
                 val profileDeferred = async {
                     try { api.getUserProfile() } catch (e: Exception) { null }
                 }
+                val recordingsDeferred = async {
+                    try { recordingsRepo.getRecordings().getOrNull() } catch (e: Exception) { null }
+                }
 
                 val tunersResponse = tunersDeferred.await()
                 val storageResponse = storageDeferred.await()
                 val profileResponse = profileDeferred.await()
+                val recordings = recordingsDeferred.await()
 
                 val total = tunersResponse?.body()?.total ?: 2
                 val inUse = tunersResponse?.body()?.inUse ?: 0
                 val zip = profileResponse?.body()?.zipCode ?: ""
+                val plan = profileResponse?.body()?.plan ?: "Free"
+                val storagePref = profileResponse?.body()?.storagePreference ?: "local"
+
+                // Sum recording file sizes as a fallback for storage usage
+                val recordingsUsedMb = recordings?.sumOf { (it.fileSizeMb ?: 0f).toDouble() }?.toFloat() ?: 0f
+
+                // Prefer the device name from the first local recording if present
+                val deviceName = recordings?.firstOrNull { !it.deviceName.isNullOrBlank() }?.deviceName ?: ""
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     tunerTotal = total,
                     tunersInUse = inUse,
                     storageInfo = storageResponse?.body(),
-                    userZipCode = zip
+                    userZipCode = zip,
+                    userPlan = plan,
+                    storagePreference = storagePref,
+                    deviceName = deviceName,
+                    recordingsUsedMb = recordingsUsedMb
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
@@ -124,6 +156,62 @@ class SettingsViewModel : ViewModel() {
                 kotlinx.coroutines.delay(3000)
                 _uiState.value = _uiState.value.copy(toastMessage = null)
             }
+        }
+    }
+
+    fun toggleUploadToCloud() {
+        val state = _uiState.value
+        if (!state.isPro && !state.uploadToCloud) {
+            // Can't enable cloud on free plan
+            showToast("Requires Pro subscription")
+            return
+        }
+        val next = if (state.uploadToCloud) "local" else "cloud"
+        setStoragePreference(next)
+    }
+
+    fun toggleKeepLocalCopy() {
+        val next = !_uiState.value.keepLocalCopyAfterCloud
+        recordingPrefs.edit().putBoolean("keep_local_copy", next).apply()
+        _uiState.value = _uiState.value.copy(keepLocalCopyAfterCloud = next)
+    }
+
+    private fun setStoragePreference(pref: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(storageUpdating = true)
+            try {
+                val resp = api.setStoragePreference(StoragePreferenceRequest(pref))
+                if (resp.isSuccessful) {
+                    val applied = resp.body()?.storagePreference ?: pref
+                    _uiState.value = _uiState.value.copy(
+                        storagePreference = applied,
+                        storageUpdating = false,
+                        toastMessage = if (applied == "cloud") "Uploading new recordings to cloud" else "Saving recordings locally"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        storageUpdating = false,
+                        toastMessage = if (resp.code() == 403) "Requires Pro subscription" else "Could not update storage preference"
+                    )
+                }
+                kotlinx.coroutines.delay(3000)
+                _uiState.value = _uiState.value.copy(toastMessage = null)
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    storageUpdating = false,
+                    toastMessage = "Could not connect. Check your network."
+                )
+                kotlinx.coroutines.delay(3000)
+                _uiState.value = _uiState.value.copy(toastMessage = null)
+            }
+        }
+    }
+
+    private fun showToast(msg: String) {
+        _uiState.value = _uiState.value.copy(toastMessage = msg)
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(3000)
+            _uiState.value = _uiState.value.copy(toastMessage = null)
         }
     }
 

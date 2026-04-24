@@ -57,6 +57,9 @@ interface AirDVRApi {
     @PUT("api/user/zip")
     suspend fun setZipCode(@Body request: SetZipRequest): Response<UserProfile>
 
+    @PUT("api/user/storage-preference")
+    suspend fun setStoragePreference(@Body request: StoragePreferenceRequest): Response<UserProfile>
+
     @POST("api/recordings/schedule")
     suspend fun scheduleRecording(@Body request: ScheduleRequest): Response<RecordingSchedule>
 

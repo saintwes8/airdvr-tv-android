@@ -127,6 +127,10 @@ data class SetZipRequest(
     @SerializedName("zip_code") val zipCode: String
 )
 
+data class StoragePreferenceRequest(
+    @SerializedName("storage_preference") val storagePreference: String
+)
+
 // ── Recording schedule ───────────────────────────────────────────────────
 
 data class RecordingSchedule(

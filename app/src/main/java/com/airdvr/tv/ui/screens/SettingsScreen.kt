@@ -99,12 +99,50 @@ fun SettingsScreen(
             }
             item { Divider() }
 
-            // ── Storage ──
+            // ── Recording Storage ──
+            item { SectionLabel("RECORDING STORAGE") }
+            item {
+                val location = if (uiState.uploadToCloud) {
+                    "Cloud"
+                } else if (uiState.deviceName.isNotBlank()) {
+                    uiState.deviceName
+                } else {
+                    "Local device"
+                }
+                SettingsRow("Recordings saved on", location)
+            }
+            item {
+                val usedText = formatStorageUsage(uiState.storageInfo, uiState.recordingsUsedMb)
+                SettingsRow("Storage used", usedText)
+            }
+            item {
+                ToggleRow(
+                    label = "Upload to Cloud",
+                    isEnabled = uiState.isPro,
+                    isOn = uiState.uploadToCloud,
+                    trailingHint = if (!uiState.isPro) "Requires Pro subscription" else null,
+                    onToggle = { viewModel.toggleUploadToCloud() }
+                )
+            }
+            if (uiState.uploadToCloud) {
+                item {
+                    ToggleRow(
+                        label = "Keep local copy after cloud upload",
+                        isEnabled = true,
+                        isOn = uiState.keepLocalCopyAfterCloud,
+                        trailingHint = null,
+                        onToggle = { viewModel.toggleKeepLocalCopy() }
+                    )
+                }
+            }
+            item { Divider() }
+
+            // ── Disk Storage ──
             if (uiState.storageInfo != null) {
-                item { SectionLabel("STORAGE") }
+                item { SectionLabel("DISK STORAGE") }
                 item {
                     val info = uiState.storageInfo!!
-                    SettingsRow("Used", "${info.used ?: "?"} / ${info.total ?: "?"}")
+                    SettingsRow("Capacity", "${formatBytes(info.used)} / ${formatBytes(info.total)}")
                 }
                 item { Divider() }
             }
@@ -365,6 +403,100 @@ private fun Divider() {
         color = PlexBorder,
         modifier = Modifier.padding(vertical = 4.dp)
     )
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ToggleRow(
+    label: String,
+    isEnabled: Boolean,
+    isOn: Boolean,
+    trailingHint: String?,
+    onToggle: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val rowAlpha = if (isEnabled) 1f else 0.55f
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .onFocusChanged { isFocused = it.isFocused }
+            .focusable(enabled = true)
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown &&
+                    (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
+                ) {
+                    if (isEnabled) onToggle()
+                    true
+                } else false
+            }
+            .background(if (isFocused) PlexCard else Color.Transparent),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.width(2.dp).fillMaxHeight()
+                .background(if (isFocused) PlexTextPrimary else Color.Transparent)
+        )
+        Row(
+            modifier = Modifier.weight(1f).padding(vertical = 10.dp, horizontal = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    label,
+                    fontSize = 15.sp,
+                    color = if (isEnabled) PlexTextPrimary else PlexTextSecondary.copy(alpha = rowAlpha)
+                )
+                if (!trailingHint.isNullOrBlank()) {
+                    Text(
+                        trailingHint,
+                        fontSize = 12.sp,
+                        color = PlexTextTertiary
+                    )
+                }
+            }
+            ToggleSwitch(isOn = isOn, isEnabled = isEnabled)
+        }
+    }
+}
+
+@Composable
+private fun ToggleSwitch(isOn: Boolean, isEnabled: Boolean) {
+    val trackColor = when {
+        !isEnabled -> PlexBorder
+        isOn -> Color(0xFF22C55E)
+        else -> PlexTextTertiary.copy(alpha = 0.5f)
+    }
+    Box(
+        modifier = Modifier
+            .width(40.dp).height(22.dp)
+            .background(trackColor, RoundedCornerShape(11.dp))
+            .padding(2.dp),
+        contentAlignment = if (isOn) Alignment.CenterEnd else Alignment.CenterStart
+    ) {
+        Box(
+            Modifier.size(18.dp).clip(CircleShape).background(Color.White)
+        )
+    }
+}
+
+private fun formatStorageUsage(info: com.airdvr.tv.data.models.StorageInfo?, recordingsUsedMb: Float): String {
+    val totalFromRecordings = if (recordingsUsedMb > 0f) {
+        if (recordingsUsedMb >= 1024f) "%.1f GB".format(recordingsUsedMb / 1024f)
+        else "%.0f MB".format(recordingsUsedMb)
+    } else null
+    val totalFromStorage = info?.used?.takeIf { it > 0L }?.let { formatBytes(it) }
+    return totalFromStorage ?: totalFromRecordings ?: "0 MB"
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0L) return "0 MB"
+    val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+    if (gb >= 1.0) return if (gb >= 10) "%.0f GB".format(gb) else "%.1f GB".format(gb)
+    val mb = bytes / (1024.0 * 1024.0)
+    return "%.0f MB".format(mb)
 }
 
 @Composable
