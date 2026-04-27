@@ -1,6 +1,5 @@
 package com.airdvr.tv.data.api
 
-import com.google.gson.JsonElement
 import com.airdvr.tv.data.models.*
 import retrofit2.Response
 import retrofit2.http.*
@@ -22,7 +21,7 @@ interface AirDVRApi {
     ): Response<GuideResponse>
 
     @GET("api/recordings")
-    suspend fun getRecordings(): Response<JsonElement>
+    suspend fun getRecordings(): Response<RecordingsResponse>
 
     @GET("api/tuners")
     suspend fun getTuners(): Response<TunersResponse>

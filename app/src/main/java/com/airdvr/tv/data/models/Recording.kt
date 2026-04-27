@@ -14,7 +14,7 @@ data class Recording(
     @SerializedName("resume_position_sec") val resumePositionSec: Int = 0,
     @SerializedName("started_at") val startTime: String? = null,
     @SerializedName("ended_at") val endTime: String? = null,
-    @SerializedName("duration") val duration: Int = 0,
+    @SerializedName(value = "duration_sec", alternate = ["duration"]) val duration: Int = 0,
     @SerializedName("category") val category: String? = null,
     @SerializedName("channel_number") val channelNumber: String? = null,
     @SerializedName("season") val seasonNumber: Int? = null,
@@ -24,7 +24,8 @@ data class Recording(
     @SerializedName("file_path") val filePath: String? = null,
     @SerializedName("tmdb_id") val tmdbId: String? = null,
     @SerializedName("error_reason") val errorReason: String? = null,
-    @SerializedName("device_name") val deviceName: String? = null
+    @SerializedName("device_name") val deviceName: String? = null,
+    @SerializedName("watched") val watched: Boolean = false
 ) {
     val startEpochSec: Long get() = parseIsoToEpochSec(startTime)
     val endEpochSec: Long get() = parseIsoToEpochSec(endTime)

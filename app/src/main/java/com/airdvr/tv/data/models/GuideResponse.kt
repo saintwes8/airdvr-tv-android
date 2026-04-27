@@ -159,3 +159,9 @@ data class RecordingStreamResponse(
     @SerializedName("expiresAt") val expiresAt: String? = null,
     @SerializedName("storage_type") val storageType: String? = null
 )
+
+// ── Recordings list response wrapper ────────────────────────────────────
+
+data class RecordingsResponse(
+    @SerializedName("recordings") val recordings: List<Recording> = emptyList()
+)
