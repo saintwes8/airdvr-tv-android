@@ -78,4 +78,32 @@ object TeamLogos {
         ?: return null
         return "https://a.espncdn.com/i/teamlogos/$league/500/$abbrev.png"
     }
+
+    /** ESPN league-logo URL (e.g. "nba" → nba.png). */
+    fun leagueUrl(league: String): String? = when (league) {
+        "nfl", "nba", "mlb", "nhl" -> "https://a.espncdn.com/i/teamlogos/leagues/500/$league.png"
+        else -> null
+    }
+
+    /**
+     * Strip the city prefix from a full team name to get the nickname
+     * ("Detroit Pistons" → "Pistons", "New York Knicks" → "Knicks").
+     * Falls back to the last word.
+     */
+    fun shortName(teamName: String?): String {
+        if (teamName.isNullOrBlank()) return ""
+        val full = teamName.trim()
+        val parts = full.split(Regex("\\s+"))
+        if (parts.size <= 1) return full
+        // Two-word nicknames we want to preserve.
+        val twoWordNicknames = setOf("trail blazers", "red sox", "white sox", "blue jays",
+            "red wings", "blue jackets", "maple leafs", "golden knights", "hockey club")
+        if (parts.size >= 3) {
+            val lastTwo = "${parts[parts.size - 2]} ${parts.last()}".lowercase()
+            if (twoWordNicknames.contains(lastTwo)) {
+                return "${parts[parts.size - 2]} ${parts.last()}"
+            }
+        }
+        return parts.last()
+    }
 }

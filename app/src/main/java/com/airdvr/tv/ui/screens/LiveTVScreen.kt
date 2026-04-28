@@ -1175,7 +1175,8 @@ private fun FullscreenActionOverlay(
                     }
                 }
 
-                // Right column: poster artwork / channel logo / fallback
+                // Right column: poster artwork / channel logo / fallback.
+                // For sports, never use TMDB — generic titles like "NBA Basketball" return wrong art.
                 Spacer(Modifier.width(24.dp))
                 Box(
                     modifier = Modifier
@@ -1186,25 +1187,40 @@ private fun FullscreenActionOverlay(
                         .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    val posterUrl = rememberPosterUrl(program?.title)
-                    val logoInfo = remember(channel.guideName) { ChannelLogoRepository.getLogoInfo(channel.guideName ?: "") }
-                    if (!posterUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = posterUrl,
-                            contentDescription = program?.title,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else if (!logoInfo?.logoUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = logoInfo!!.logoUrl,
-                            contentDescription = channel.guideName,
-                            modifier = Modifier.size(64.dp),
-                            contentScale = ContentScale.Fit
+                    val isGenericSports = program != null && isGenericSportsTitle(program.title)
+                    val isSportsProgram = sportsScore != null || isGenericSports ||
+                        (program != null && SportsCalendarViewModel.isSports(program))
+                    val logoInfo = remember(channel.guideName) {
+                        ChannelLogoRepository.getLogoInfo(channel.guideName ?: "")
+                    }
+
+                    if (isSportsProgram) {
+                        SportsArtwork(
+                            score = sportsScore,
+                            program = program,
+                            channelLogoUrl = logoInfo?.logoUrl,
+                            channelName = channel.guideName
                         )
                     } else {
-                        val abbrev = (channel.guideName ?: "").take(3).uppercase()
-                        Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+                        val posterUrl = rememberPosterUrl(program?.title)
+                        if (!posterUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = posterUrl,
+                                contentDescription = program?.title,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = logoInfo!!.logoUrl,
+                                contentDescription = channel.guideName,
+                                modifier = Modifier.size(64.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            val abbrev = (channel.guideName ?: "").take(3).uppercase()
+                            Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+                        }
                     }
                 }
             }
@@ -1642,6 +1658,23 @@ private fun RecordStorageIndicator(
 // LIVE SPORTS SCORE PANEL (in-overlay)
 // ═══════════════════════════════════════════════════════════════════════════
 
+/** Generic EPG sports titles where TMDB returns unrelated artwork ("The Queen of Basketball" etc.). */
+private val GENERIC_SPORTS_TITLES = listOf(
+    "NBA Basketball", "NFL Football", "MLB Baseball", "NHL Hockey",
+    "NCAA Football", "NCAA Basketball", "College Football", "College Basketball",
+    "PGA Golf", "MLS Soccer", "Premier League Soccer", "WNBA Basketball"
+)
+
+private fun isGenericSportsTitle(title: String?): Boolean {
+    if (title.isNullOrBlank()) return false
+    return GENERIC_SPORTS_TITLES.any { title.contains(it, ignoreCase = true) }
+}
+
+private fun isInProgress(status: String?): Boolean {
+    val s = (status ?: "").lowercase()
+    return s.contains("progress") || s.contains("live") || s == "in progress" || s == "inprogress"
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun SportsScorePanel(
@@ -1649,65 +1682,60 @@ private fun SportsScorePanel(
     program: EpgProgram,
     channel: Channel?
 ) {
-    val league = score.league?.lowercase()
-        ?: SportsCalendarViewModel.detectLeague(program.title ?: "")
-    val awayLogo = TeamLogos.urlFor(league, score.awayTeam)
-    val homeLogo = TeamLogos.urlFor(league, score.homeTeam)
-    val isLive = (score.status ?: "").lowercase().let {
-        it.contains("progress") || it.contains("live") || it.contains("inprogress")
-    }
-    val homeScore = score.homeScore
-    val awayScore = score.awayScore
-    val showScores = homeScore != null && awayScore != null
+    val homeFull = score.homeTeam?.takeIf { it.isNotBlank() }
+    val awayFull = score.awayTeam?.takeIf { it.isNotBlank() }
+    val homeShort = TeamLogos.shortName(homeFull)
+    val awayShort = TeamLogos.shortName(awayFull)
+    val live = isInProgress(score.status)
+    val homePts = score.homeScore
+    val awayPts = score.awayScore
+    val showScores = homePts != null && awayPts != null
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // Team row: away logo · away name · score · home name · home logo
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            ScoreTeam(logoUrl = awayLogo, name = score.awayTeam ?: "")
-            if (showScores) {
-                Text(
-                    "$awayScore - $homeScore",
-                    fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
-                )
-            } else {
-                Text("vs", fontSize = 16.sp, color = PlexTextSecondary)
-            }
-            ScoreTeam(logoUrl = homeLogo, name = score.homeTeam ?: "", reversed = true)
+        // Title: "Pistons vs Magic" (or fall back to program title if teams missing)
+        val matchupTitle = when {
+            awayShort.isNotBlank() && homeShort.isNotBlank() -> "$awayShort vs $homeShort"
+            else -> program.title ?: ""
+        }
+        Text(
+            matchupTitle,
+            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
+
+        // Score line — large bold "56 - 57"
+        if (showScores) {
+            Text(
+                "$awayPts - $homePts",
+                fontSize = 32.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+            )
         }
 
-        // Quarter / time remaining or status
-        val statusLine = buildString {
-            if (isLive) {
-                val q = score.quarter?.takeIf { it.isNotBlank() }
-                val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
-                when {
-                    q != null && tr != null -> append("$q · $tr")
-                    q != null -> append(q)
-                    tr != null -> append(tr)
-                    else -> append("LIVE")
-                }
-            } else {
-                val s = score.status?.takeIf { it.isNotBlank() }
-                if (s != null) append(s) else {
-                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                    append(timeFmt.format(Date(program.startEpochSec * 1000)))
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (isLive) {
-                Box(
-                    Modifier.size(8.dp).clip(CircleShape).background(LiveRedDot)
-                )
+        // LIVE · 3rd · 8:46  (or status / kickoff time)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (live) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(LiveRedDot))
                 Text("LIVE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LiveRedDot)
+            }
+            val q = score.quarter?.takeIf { it.isNotBlank() }
+            val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
+            val statusLine = when {
+                live && q != null && tr != null -> "$q · $tr"
+                live && q != null -> q
+                live && tr != null -> tr
+                !score.status.isNullOrBlank() -> score.status!!
+                else -> {
+                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                    timeFmt.format(Date(program.startEpochSec * 1000))
+                }
             }
             Text(statusLine, fontSize = 14.sp, color = PlexTextSecondary, fontWeight = FontWeight.Medium)
         }
 
-        // Channel info
+        // Channel info — "Ch 4.1 · NBC"
         val chParts = mutableListOf<String>()
         channel?.guideNumber?.takeIf { it.isNotBlank() }?.let { chParts.add("Ch $it") }
         channel?.guideName?.takeIf { it.isNotBlank() }?.let { chParts.add(it) }
@@ -1720,54 +1748,66 @@ private fun SportsScorePanel(
     }
 }
 
+/**
+ * Right-side overlay artwork for sports programs:
+ *   - both team logos side-by-side when matched
+ *   - league logo when known but teams aren't matched
+ *   - channel logo / abbreviation as last fallback (still no TMDB)
+ */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun ScoreTeam(logoUrl: String?, name: String, reversed: Boolean = false) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (!reversed) {
-            TeamLogoSmall(logoUrl, name)
-            Text(
-                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 140.dp)
-            )
-        } else {
-            Text(
-                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 140.dp)
-            )
-            TeamLogoSmall(logoUrl, name)
-        }
-    }
-}
+private fun SportsArtwork(
+    score: GameScore?,
+    program: EpgProgram?,
+    channelLogoUrl: String?,
+    channelName: String?
+) {
+    val league = (score?.league?.lowercase()?.takeIf { it.isNotBlank() }
+        ?: program?.let { SportsCalendarViewModel.detectLeague(it.title ?: "") }
+        ?: "")
+    val awayLogo = TeamLogos.urlFor(league, score?.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, score?.homeTeam)
 
-@Composable
-private fun TeamLogoSmall(logoUrl: String?, name: String) {
-    Box(
-        modifier = Modifier
-            .size(32.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(PlexCard),
-        contentAlignment = Alignment.Center
-    ) {
-        var error by remember(logoUrl) { mutableStateOf(logoUrl.isNullOrBlank()) }
-        if (!error && !logoUrl.isNullOrBlank()) {
-            AsyncImage(
-                model = logoUrl,
-                contentDescription = name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(28.dp),
-                onError = { error = true }
-            )
-        } else {
-            Text(
-                name.take(3).uppercase(),
-                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary
-            )
+    when {
+        awayLogo != null && homeLogo != null -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                AsyncImage(
+                    model = awayLogo,
+                    contentDescription = score?.awayTeam,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(56.dp)
+                )
+                AsyncImage(
+                    model = homeLogo,
+                    contentDescription = score?.homeTeam,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+        }
+        else -> {
+            val leagueLogo = TeamLogos.leagueUrl(league)
+            if (leagueLogo != null) {
+                AsyncImage(
+                    model = leagueLogo,
+                    contentDescription = league.uppercase(),
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(80.dp)
+                )
+            } else if (!channelLogoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = channelLogoUrl,
+                    contentDescription = channelName,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.size(64.dp)
+                )
+            } else {
+                val abbrev = (channelName ?: "").take(3).uppercase()
+                Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+            }
         }
     }
 }

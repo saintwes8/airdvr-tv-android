@@ -13,6 +13,7 @@ import android.util.Log
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.StreamRepository
+import com.airdvr.tv.util.parseIsoToEpochSec
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -565,11 +566,25 @@ class LiveTVViewModel : ViewModel() {
         }
         // 3) Loose substring match: any team name appears in the program title.
         val title = (program.title ?: "").lowercase()
-        return games.firstOrNull { g ->
+        games.firstOrNull { g ->
             val gh = (g.homeTeam ?: "").lowercase()
             val ga = (g.awayTeam ?: "").lowercase()
             (gh.isNotBlank() && title.contains(gh)) || (ga.isNotBlank() && title.contains(ga))
+        }?.let { return it }
+        // 4) Time-overlap fallback: generic titles ("NBA Basketball / Teams TBA") still
+        //    match when the SportsDataIO game's start time falls inside the EPG program window.
+        val pStart = program.startEpochSec
+        val pEnd = program.endEpochSec
+        if (pStart > 0 && pEnd > pStart) {
+            val pad = 30L * 60L  // 30-min slack on either side
+            return games.mapNotNull { g ->
+                val gStart = parseIsoToEpochSec(g.startTime)
+                if (gStart <= 0L) return@mapNotNull null
+                val inWindow = gStart in (pStart - pad)..(pEnd + pad)
+                if (inWindow) g to kotlin.math.abs(gStart - pStart) else null
+            }.minByOrNull { it.second }?.first
         }
+        return null
     }
 
     fun overlayNavigateLeft() {
