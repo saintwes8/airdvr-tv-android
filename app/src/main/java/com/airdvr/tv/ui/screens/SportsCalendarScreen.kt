@@ -43,6 +43,7 @@ import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.DaySection
 import com.airdvr.tv.ui.viewmodels.SportsCalendarViewModel
 import com.airdvr.tv.ui.viewmodels.SportsEvent
+import com.airdvr.tv.util.TeamLogos
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,78 +81,10 @@ private val leagueColors = mapOf(
     "sport" to Color(0xFF3B82F6),
 )
 
-// ── ESPN team-abbreviation maps (for logo URL lookup) ───────────────────
-// Names lowercased on lookup. Includes common alternate spellings.
+// Team logo lookup is shared across screens — see com.airdvr.tv.util.TeamLogos.
 
-private val nflTeams = mapOf(
-    "arizona cardinals" to "ari", "atlanta falcons" to "atl", "baltimore ravens" to "bal",
-    "buffalo bills" to "buf", "carolina panthers" to "car", "chicago bears" to "chi",
-    "cincinnati bengals" to "cin", "cleveland browns" to "cle", "dallas cowboys" to "dal",
-    "denver broncos" to "den", "detroit lions" to "det", "green bay packers" to "gb",
-    "houston texans" to "hou", "indianapolis colts" to "ind", "jacksonville jaguars" to "jax",
-    "kansas city chiefs" to "kc", "las vegas raiders" to "lv", "los angeles chargers" to "lac",
-    "los angeles rams" to "lar", "miami dolphins" to "mia", "minnesota vikings" to "min",
-    "new england patriots" to "ne", "new orleans saints" to "no", "new york giants" to "nyg",
-    "new york jets" to "nyj", "philadelphia eagles" to "phi", "pittsburgh steelers" to "pit",
-    "san francisco 49ers" to "sf", "seattle seahawks" to "sea", "tampa bay buccaneers" to "tb",
-    "tennessee titans" to "ten", "washington commanders" to "wsh"
-)
-
-private val nbaTeams = mapOf(
-    "atlanta hawks" to "atl", "boston celtics" to "bos", "brooklyn nets" to "bkn",
-    "charlotte hornets" to "cha", "chicago bulls" to "chi", "cleveland cavaliers" to "cle",
-    "dallas mavericks" to "dal", "denver nuggets" to "den", "detroit pistons" to "det",
-    "golden state warriors" to "gs", "houston rockets" to "hou", "indiana pacers" to "ind",
-    "los angeles clippers" to "lac", "la clippers" to "lac", "los angeles lakers" to "lal",
-    "la lakers" to "lal", "memphis grizzlies" to "mem", "miami heat" to "mia",
-    "milwaukee bucks" to "mil", "minnesota timberwolves" to "min", "new orleans pelicans" to "no",
-    "new york knicks" to "ny", "oklahoma city thunder" to "okc", "orlando magic" to "orl",
-    "philadelphia 76ers" to "phi", "phoenix suns" to "phx", "portland trail blazers" to "por",
-    "sacramento kings" to "sac", "san antonio spurs" to "sa", "toronto raptors" to "tor",
-    "utah jazz" to "utah", "washington wizards" to "wsh"
-)
-
-private val mlbTeams = mapOf(
-    "arizona diamondbacks" to "ari", "atlanta braves" to "atl", "baltimore orioles" to "bal",
-    "boston red sox" to "bos", "chicago cubs" to "chc", "chicago white sox" to "chw",
-    "cincinnati reds" to "cin", "cleveland guardians" to "cle", "colorado rockies" to "col",
-    "detroit tigers" to "det", "houston astros" to "hou", "kansas city royals" to "kc",
-    "los angeles angels" to "laa", "los angeles dodgers" to "lad", "miami marlins" to "mia",
-    "milwaukee brewers" to "mil", "minnesota twins" to "min", "new york mets" to "nym",
-    "new york yankees" to "nyy", "oakland athletics" to "oak", "philadelphia phillies" to "phi",
-    "pittsburgh pirates" to "pit", "san diego padres" to "sd", "san francisco giants" to "sf",
-    "seattle mariners" to "sea", "st. louis cardinals" to "stl", "st louis cardinals" to "stl",
-    "tampa bay rays" to "tb", "texas rangers" to "tex", "toronto blue jays" to "tor",
-    "washington nationals" to "wsh"
-)
-
-private val nhlTeams = mapOf(
-    "anaheim ducks" to "ana", "arizona coyotes" to "ari", "boston bruins" to "bos",
-    "buffalo sabres" to "buf", "calgary flames" to "cgy", "carolina hurricanes" to "car",
-    "chicago blackhawks" to "chi", "colorado avalanche" to "col", "columbus blue jackets" to "cbj",
-    "dallas stars" to "dal", "detroit red wings" to "det", "edmonton oilers" to "edm",
-    "florida panthers" to "fla", "los angeles kings" to "la", "minnesota wild" to "min",
-    "montreal canadiens" to "mtl", "nashville predators" to "nsh", "new jersey devils" to "nj",
-    "new york islanders" to "nyi", "new york rangers" to "nyr", "ottawa senators" to "ott",
-    "philadelphia flyers" to "phi", "pittsburgh penguins" to "pit", "san jose sharks" to "sj",
-    "seattle kraken" to "sea", "st. louis blues" to "stl", "st louis blues" to "stl",
-    "tampa bay lightning" to "tb", "toronto maple leafs" to "tor", "utah hockey club" to "utah",
-    "vancouver canucks" to "van", "vegas golden knights" to "vgk", "washington capitals" to "wsh",
-    "winnipeg jets" to "wpg"
-)
-
-private fun teamLogoUrl(league: String, teamName: String?): String? {
-    if (teamName.isNullOrBlank()) return null
-    val key = teamName.trim().lowercase()
-    val abbrev = when (league) {
-        "nfl" -> nflTeams[key] ?: nflTeams.entries.firstOrNull { key.contains(it.key) }?.value
-        "nba" -> nbaTeams[key] ?: nbaTeams.entries.firstOrNull { key.contains(it.key) }?.value
-        "mlb" -> mlbTeams[key] ?: mlbTeams.entries.firstOrNull { key.contains(it.key) }?.value
-        "nhl" -> nhlTeams[key] ?: nhlTeams.entries.firstOrNull { key.contains(it.key) }?.value
-        else -> null
-    } ?: return null
-    return "https://a.espncdn.com/i/teamlogos/$league/500/$abbrev.png"
-}
+private fun teamLogoUrl(league: String, teamName: String?): String? =
+    TeamLogos.urlFor(league, teamName)
 
 // ── Screen ──────────────────────────────────────────────────────────────
 
@@ -547,13 +480,27 @@ private fun GameCard(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                if (event.homeTeam != null && event.awayTeam != null) {
+                // Prefer SportsDataIO-supplied team names when we have a matched live game.
+                val sdAway = event.score?.awayTeam?.takeIf { it.isNotBlank() }
+                val sdHome = event.score?.homeTeam?.takeIf { it.isNotBlank() }
+                val displayAway = sdAway ?: event.awayTeam
+                val displayHome = sdHome ?: event.homeTeam
+                if (displayAway != null && displayHome != null) {
                     MatchupRow(
                         league = event.league,
-                        away = event.awayTeam,
-                        home = event.homeTeam,
+                        away = displayAway,
+                        home = displayHome,
                         wide = wide
                     )
+                    val score = event.score
+                    if (score != null && score.homeScore != null && score.awayScore != null) {
+                        Text(
+                            "${score.awayScore} - ${score.homeScore}",
+                            fontSize = if (wide) 18.sp else 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = PlexTextPrimary
+                        )
+                    }
                 } else {
                     Text(
                         event.title,
@@ -576,10 +523,25 @@ private fun GameCard(
                 )
             }
 
-            // Bottom-right: start time
-            if (!event.isLive) {
+            // Bottom-right: start time, or quarter/clock for in-progress games.
+            val score = event.score
+            val rightLabel = when {
+                event.isLive && score != null -> {
+                    val q = score.quarter?.takeIf { it.isNotBlank() }
+                    val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
+                    when {
+                        q != null && tr != null -> "$q · $tr"
+                        q != null -> q
+                        tr != null -> tr
+                        else -> null
+                    }
+                }
+                !event.isLive -> formatStartTime(event.startEpochSec)
+                else -> null
+            }
+            if (rightLabel != null) {
                 Text(
-                    formatStartTime(event.startEpochSec),
+                    rightLabel,
                     fontSize = 11.sp, color = PlexTextSecondary,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)

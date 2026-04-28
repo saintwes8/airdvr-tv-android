@@ -165,3 +165,25 @@ data class RecordingStreamResponse(
 data class RecordingsResponse(
     @SerializedName("recordings") val recordings: List<Recording> = emptyList()
 )
+
+// ── Live sports scores (SportsDataIO via /api/sports/scores/today) ──────
+
+data class SportsScoresResponse(
+    @SerializedName("nba") val nba: List<GameScore> = emptyList(),
+    @SerializedName("nfl") val nfl: List<GameScore> = emptyList(),
+    @SerializedName("mlb") val mlb: List<GameScore> = emptyList(),
+    @SerializedName("nhl") val nhl: List<GameScore> = emptyList()
+)
+
+data class GameScore(
+    @SerializedName("homeTeam") val homeTeam: String? = null,
+    @SerializedName("awayTeam") val awayTeam: String? = null,
+    @SerializedName("homeScore") val homeScore: Int? = null,
+    @SerializedName("awayScore") val awayScore: Int? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("quarter") val quarter: String? = null,
+    @SerializedName("timeRemaining") val timeRemaining: String? = null,
+    @SerializedName("startTime") val startTime: String? = null,
+    @SerializedName("league") val league: String? = null,
+    @SerializedName("channel") val channel: String? = null
+)

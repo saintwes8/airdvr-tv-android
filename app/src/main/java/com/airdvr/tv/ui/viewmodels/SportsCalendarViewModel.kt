@@ -6,8 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +30,8 @@ data class SportsEvent(
     val channel: Channel?,
     val league: String,
     val homeTeam: String?,
-    val awayTeam: String?
+    val awayTeam: String?,
+    val score: GameScore? = null
 ) {
     val startEpochSec: Long get() = program.startEpochSec
     val endEpochSec: Long get() = program.endEpochSec
@@ -72,8 +76,15 @@ class SportsCalendarViewModel : ViewModel() {
     // Cache of all sports events (unfiltered) so changing the league filter
     // doesn't refetch.
     private var allEvents: List<SportsEvent> = emptyList()
+    private var liveScores: List<GameScore> = emptyList()
+    private var scoresPollJob: Job? = null
 
     init { load() }
+
+    override fun onCleared() {
+        super.onCleared()
+        scoresPollJob?.cancel()
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -111,9 +122,73 @@ class SportsCalendarViewModel : ViewModel() {
 
                 // Fetch existing schedules so we can show "Already scheduled" hints.
                 fetchSchedules()
+
+                // Pull live scores and start 30s polling while live games are present.
+                fetchScoresAndAttach()
+                startScoresPollingIfNeeded()
             } catch (e: Exception) {
                 Log.d("SPORTSCAL", "Exception: ${e.message}")
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Network error: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun fetchScoresAndAttach() {
+        try {
+            val resp = api.getSportsScoresToday()
+            if (!resp.isSuccessful) return
+            val body = resp.body() ?: return
+            liveScores = body.nba + body.nfl + body.mlb + body.nhl
+            attachScoresToEvents()
+        } catch (e: Exception) {
+            Log.d("SPORTSCAL", "scores fetch failed: ${e.message}")
+        }
+    }
+
+    private fun attachScoresToEvents() {
+        if (liveScores.isEmpty()) return
+        val byLeague = liveScores.groupBy { (it.league ?: "").lowercase() }
+        allEvents = allEvents.map { ev -> ev.copy(score = matchScore(ev, byLeague)) }
+        applyFilter(_uiState.value.selectedLeague)
+    }
+
+    private fun matchScore(event: SportsEvent, byLeague: Map<String, List<GameScore>>): GameScore? {
+        val pool = byLeague[event.league] ?: return null
+        if (pool.isEmpty()) return null
+        // Channel-number first.
+        event.channelNumber?.let { ch ->
+            pool.firstOrNull { it.channel == ch }?.let { return it }
+        }
+        // Team-name match.
+        val home = event.homeTeam?.lowercase() ?: ""
+        val away = event.awayTeam?.lowercase() ?: ""
+        if (home.isNotBlank() || away.isNotBlank()) {
+            pool.firstOrNull { g ->
+                val gh = (g.homeTeam ?: "").lowercase()
+                val ga = (g.awayTeam ?: "").lowercase()
+                (home.isNotBlank() && (gh.contains(home) || home.contains(gh))) ||
+                (away.isNotBlank() && (ga.contains(away) || away.contains(ga)))
+            }?.let { return it }
+        }
+        // Loose substring against title.
+        val title = event.title.lowercase()
+        return pool.firstOrNull { g ->
+            val gh = (g.homeTeam ?: "").lowercase()
+            val ga = (g.awayTeam ?: "").lowercase()
+            (gh.isNotBlank() && title.contains(gh)) || (ga.isNotBlank() && title.contains(ga))
+        }
+    }
+
+    private fun startScoresPollingIfNeeded() {
+        scoresPollJob?.cancel()
+        // Only poll when at least one event is currently live.
+        if (allEvents.none { it.isLive }) return
+        scoresPollJob = viewModelScope.launch {
+            while (true) {
+                delay(30_000)
+                fetchScoresAndAttach()
+                // Stop polling once nothing is live anymore.
+                if (allEvents.none { it.isLive }) break
             }
         }
     }

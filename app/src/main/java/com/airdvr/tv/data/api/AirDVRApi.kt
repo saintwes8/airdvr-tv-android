@@ -73,4 +73,7 @@ interface AirDVRApi {
 
     @GET("api/recordings/{id}/stream")
     suspend fun getRecordingStream(@Path("id") id: String): Response<RecordingStreamResponse>
+
+    @GET("api/sports/scores/today")
+    suspend fun getSportsScoresToday(): Response<SportsScoresResponse>
 }

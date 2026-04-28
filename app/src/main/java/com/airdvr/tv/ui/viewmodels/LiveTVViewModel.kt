@@ -6,6 +6,7 @@ import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
 import android.util.Log
@@ -93,7 +94,10 @@ data class LiveTVUiState(
 
     // User storage preference
     val defaultStoragePreference: String = "local",
-    val userPlan: String = "free"
+    val userPlan: String = "free",
+
+    // Live sports score for the currently watched program (null when not sports / no match)
+    val currentSportsScore: GameScore? = null
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -154,6 +158,7 @@ class LiveTVViewModel : ViewModel() {
     private var fullscreenOverlayJob: Job? = null
     private var nowPlayingBarJob: Job? = null
     private var toastJob: Job? = null
+    private var scoresPollJob: Job? = null
 
     init {
         val now = System.currentTimeMillis() / 1000
@@ -480,12 +485,91 @@ class LiveTVViewModel : ViewModel() {
         fullscreenOverlayJob = viewModelScope.launch {
             delay(8000)
             _uiState.value = _uiState.value.copy(showFullscreenOverlay = false)
+            stopScoresPolling()
         }
+        startScoresPollingIfSports()
     }
 
     fun hideFullscreenOverlay() {
         fullscreenOverlayJob?.cancel()
         _uiState.value = _uiState.value.copy(showFullscreenOverlay = false)
+        stopScoresPolling()
+    }
+
+    // ── Live sports scores ──────────────────────────────────────────────────
+
+    private fun startScoresPollingIfSports() {
+        val program = _uiState.value.currentProgram ?: run {
+            _uiState.value = _uiState.value.copy(currentSportsScore = null)
+            return
+        }
+        if (!SportsCalendarViewModel.isSports(program)) {
+            _uiState.value = _uiState.value.copy(currentSportsScore = null)
+            return
+        }
+        scoresPollJob?.cancel()
+        scoresPollJob = viewModelScope.launch {
+            while (true) {
+                fetchAndMatchScores()
+                delay(30_000)
+            }
+        }
+    }
+
+    private fun stopScoresPolling() {
+        scoresPollJob?.cancel()
+        scoresPollJob = null
+    }
+
+    private suspend fun fetchAndMatchScores() {
+        val program = _uiState.value.currentProgram ?: return
+        val channel = _uiState.value.currentChannel
+        try {
+            val resp = api.getSportsScoresToday()
+            if (!resp.isSuccessful) return
+            val body = resp.body() ?: return
+            val title = program.title ?: ""
+            val league = SportsCalendarViewModel.detectLeague(title)
+            val pool: List<GameScore> = when (league) {
+                "nba" -> body.nba
+                "nfl" -> body.nfl
+                "mlb" -> body.mlb
+                "nhl" -> body.nhl
+                else -> body.nba + body.nfl + body.mlb + body.nhl
+            }
+            val matched = matchGame(pool, program, channel?.guideNumber)
+            _uiState.value = _uiState.value.copy(currentSportsScore = matched)
+        } catch (e: Exception) {
+            Log.d("SCORES", "fetch failed: ${e.message}")
+        }
+    }
+
+    private fun matchGame(games: List<GameScore>, program: EpgProgram, channelNumber: String?): GameScore? {
+        if (games.isEmpty()) return null
+        // 1) Channel-number match (strongest signal when API supplies it).
+        if (!channelNumber.isNullOrBlank()) {
+            games.firstOrNull { it.channel == channelNumber }?.let { return it }
+        }
+        // 2) Team-name match via parseTeams()
+        val teams = SportsCalendarViewModel.parseTeams(program.title ?: "")
+        if (teams != null) {
+            val (away, home) = teams
+            val awayLc = away.lowercase()
+            val homeLc = home.lowercase()
+            games.firstOrNull { g ->
+                val gh = (g.homeTeam ?: "").lowercase()
+                val ga = (g.awayTeam ?: "").lowercase()
+                (gh.contains(homeLc) || homeLc.contains(gh) ||
+                 ga.contains(awayLc) || awayLc.contains(ga))
+            }?.let { return it }
+        }
+        // 3) Loose substring match: any team name appears in the program title.
+        val title = (program.title ?: "").lowercase()
+        return games.firstOrNull { g ->
+            val gh = (g.homeTeam ?: "").lowercase()
+            val ga = (g.awayTeam ?: "").lowercase()
+            (gh.isNotBlank() && title.contains(gh)) || (ga.isNotBlank() && title.contains(ga))
+        }
     }
 
     fun overlayNavigateLeft() {

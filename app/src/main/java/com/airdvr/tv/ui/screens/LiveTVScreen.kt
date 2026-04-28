@@ -73,6 +73,7 @@ import coil.compose.AsyncImage
 import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.ui.components.LoadingSpinner
 import com.airdvr.tv.ui.components.rememberPosterUrl
@@ -81,7 +82,9 @@ import com.airdvr.tv.ui.viewmodels.LiveTVViewModel
 import com.airdvr.tv.ui.viewmodels.MultiViewNavDirection
 import com.airdvr.tv.ui.viewmodels.PaneState
 import com.airdvr.tv.ui.viewmodels.ScreenMode
+import com.airdvr.tv.ui.viewmodels.SportsCalendarViewModel
 import com.airdvr.tv.util.Constants
+import com.airdvr.tv.util.TeamLogos
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -1001,7 +1004,8 @@ private fun FullscreenLayout(
                 isMuted = uiState.isMuted,
                 ccEnabled = uiState.ccEnabled,
                 selectedIndex = uiState.actionButtonIndex,
-                schedules = uiState.schedules
+                schedules = uiState.schedules,
+                sportsScore = uiState.currentSportsScore
             )
         }
     }
@@ -1082,7 +1086,8 @@ private fun FullscreenActionOverlay(
     isMuted: Boolean,
     ccEnabled: Boolean,
     selectedIndex: Int,
-    schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList()
+    schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList(),
+    sportsScore: GameScore? = null
 ) {
     if (channel == null) return
     Box(
@@ -1120,14 +1125,23 @@ private fun FullscreenActionOverlay(
                         OverlayActionBtn(Icons.Filled.ClosedCaption, if (ccEnabled) "CC On" else "CC Off", selectedIndex == 4)
                     }
 
-                    // Show title
-                    Text(
-                        program?.title ?: "${channel.guideNumber ?: ""} ${channel.guideName ?: ""}",
-                        fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis
-                    )
+                    // Live sports scoreboard takes the place of the title block when matched.
+                    if (sportsScore != null && program != null) {
+                        SportsScorePanel(
+                            score = sportsScore,
+                            program = program,
+                            channel = channel
+                        )
+                    } else {
+                        // Show title
+                        Text(
+                            program?.title ?: "${channel.guideNumber ?: ""} ${channel.guideName ?: ""}",
+                            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis
+                        )
+                    }
 
-                    if (program != null) {
+                    if (program != null && sportsScore == null) {
                         val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
                         val parts = mutableListOf<String>()
                         program.episodeTitle?.let { if (it.isNotBlank()) parts.add(it) }
@@ -1620,6 +1634,140 @@ private fun RecordStorageIndicator(
                     fontWeight = FontWeight.Medium
                 )
             }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIVE SPORTS SCORE PANEL (in-overlay)
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SportsScorePanel(
+    score: GameScore,
+    program: EpgProgram,
+    channel: Channel?
+) {
+    val league = score.league?.lowercase()
+        ?: SportsCalendarViewModel.detectLeague(program.title ?: "")
+    val awayLogo = TeamLogos.urlFor(league, score.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, score.homeTeam)
+    val isLive = (score.status ?: "").lowercase().let {
+        it.contains("progress") || it.contains("live") || it.contains("inprogress")
+    }
+    val homeScore = score.homeScore
+    val awayScore = score.awayScore
+    val showScores = homeScore != null && awayScore != null
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Team row: away logo · away name · score · home name · home logo
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ScoreTeam(logoUrl = awayLogo, name = score.awayTeam ?: "")
+            if (showScores) {
+                Text(
+                    "$awayScore - $homeScore",
+                    fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                )
+            } else {
+                Text("vs", fontSize = 16.sp, color = PlexTextSecondary)
+            }
+            ScoreTeam(logoUrl = homeLogo, name = score.homeTeam ?: "", reversed = true)
+        }
+
+        // Quarter / time remaining or status
+        val statusLine = buildString {
+            if (isLive) {
+                val q = score.quarter?.takeIf { it.isNotBlank() }
+                val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
+                when {
+                    q != null && tr != null -> append("$q · $tr")
+                    q != null -> append(q)
+                    tr != null -> append(tr)
+                    else -> append("LIVE")
+                }
+            } else {
+                val s = score.status?.takeIf { it.isNotBlank() }
+                if (s != null) append(s) else {
+                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                    append(timeFmt.format(Date(program.startEpochSec * 1000)))
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (isLive) {
+                Box(
+                    Modifier.size(8.dp).clip(CircleShape).background(LiveRedDot)
+                )
+                Text("LIVE", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = LiveRedDot)
+            }
+            Text(statusLine, fontSize = 14.sp, color = PlexTextSecondary, fontWeight = FontWeight.Medium)
+        }
+
+        // Channel info
+        val chParts = mutableListOf<String>()
+        channel?.guideNumber?.takeIf { it.isNotBlank() }?.let { chParts.add("Ch $it") }
+        channel?.guideName?.takeIf { it.isNotBlank() }?.let { chParts.add(it) }
+        if (chParts.isNotEmpty()) {
+            Text(
+                chParts.joinToString(" · "),
+                fontSize = 12.sp, color = PlexTextTertiary
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ScoreTeam(logoUrl: String?, name: String, reversed: Boolean = false) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (!reversed) {
+            TeamLogoSmall(logoUrl, name)
+            Text(
+                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp)
+            )
+        } else {
+            Text(
+                name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp)
+            )
+            TeamLogoSmall(logoUrl, name)
+        }
+    }
+}
+
+@Composable
+private fun TeamLogoSmall(logoUrl: String?, name: String) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(PlexCard),
+        contentAlignment = Alignment.Center
+    ) {
+        var error by remember(logoUrl) { mutableStateOf(logoUrl.isNullOrBlank()) }
+        if (!error && !logoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(28.dp),
+                onError = { error = true }
+            )
+        } else {
+            Text(
+                name.take(3).uppercase(),
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary
+            )
         }
     }
 }
