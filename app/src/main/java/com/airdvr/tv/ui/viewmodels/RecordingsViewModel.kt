@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Recording
+import com.airdvr.tv.data.models.RecordingRetentionRequest
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
+import com.airdvr.tv.data.models.StorageWarning
 import com.airdvr.tv.data.repository.RecordingsRepository
 import com.airdvr.tv.util.Constants
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,6 +43,7 @@ data class RecordingsUiState(
     val schedules: List<RecordingSchedule> = emptyList(),
     val selectedTab: RecordingsTab = RecordingsTab.RECORDINGS,
     val selectedCategory: RecordingCategory = RecordingCategory.ALL,
+    val storageWarnings: List<StorageWarning> = emptyList(),
     val error: String? = null,
     val toastMessage: String? = null,
     val loadingPlaybackId: String? = null
@@ -73,7 +76,19 @@ class RecordingsViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
             }
             fetchSchedules()
+            fetchStorageWarnings()
         }
+    }
+
+    private suspend fun fetchStorageWarnings() {
+        try {
+            val resp = api.getStorageWarnings()
+            if (resp.isSuccessful) {
+                _uiState.value = _uiState.value.copy(
+                    storageWarnings = resp.body()?.warnings ?: emptyList()
+                )
+            }
+        } catch (_: Exception) { }
     }
 
     private suspend fun fetchSchedules() {
@@ -127,6 +142,41 @@ class RecordingsViewModel : ViewModel() {
                     load()
                 } else {
                     showToast("Could not delete recording")
+                }
+            } catch (_: Exception) {
+                showToast("Could not connect. Check your network.")
+            }
+        }
+    }
+
+    /** Update retention for a single recording. `days = null` → never expire. */
+    fun setRecordingRetention(id: String, days: Int?) {
+        viewModelScope.launch {
+            try {
+                val resp = api.patchRecordingRetention(id, RecordingRetentionRequest(days))
+                if (resp.isSuccessful) {
+                    val label = days?.let { "$it days" } ?: "Never"
+                    showToast("Retention: $label")
+                    load()
+                } else {
+                    showToast(if (resp.code() == 403) "Requires Pro subscription" else "Could not update retention")
+                }
+            } catch (_: Exception) {
+                showToast("Could not connect. Check your network.")
+            }
+        }
+    }
+
+    /** Delete cloud copy only — keeps the local file (if any). */
+    fun deleteRecordingCloud(id: String) {
+        viewModelScope.launch {
+            try {
+                val resp = api.deleteRecordingCloud(id)
+                if (resp.isSuccessful) {
+                    showToast("Cloud copy deleted")
+                    load()
+                } else {
+                    showToast("Could not delete cloud copy")
                 }
             } catch (_: Exception) {
                 showToast("Could not connect. Check your network.")

@@ -13,6 +13,8 @@ import android.util.Log
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.data.repository.GuideRepository
 import com.airdvr.tv.data.repository.StreamRepository
+import com.airdvr.tv.data.stream.StreamMode
+import com.airdvr.tv.data.stream.StreamModeManager
 import com.airdvr.tv.util.parseIsoToEpochSec
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -98,7 +100,10 @@ data class LiveTVUiState(
     val userPlan: String = "free",
 
     // Live sports score for the currently watched program (null when not sports / no match)
-    val currentSportsScore: GameScore? = null
+    val currentSportsScore: GameScore? = null,
+
+    // Three-tier stream mode (LOCAL / REMOTE / TUNNEL)
+    val streamMode: StreamMode = StreamMode.TUNNEL
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -182,6 +187,11 @@ class LiveTVViewModel : ViewModel() {
         viewModelScope.launch {
             guidePrefsManager.color.collect {
                 _uiState.value = _uiState.value.copy(guideColorHex = it)
+            }
+        }
+        viewModelScope.launch {
+            StreamModeManager.mode.collect {
+                _uiState.value = _uiState.value.copy(streamMode = it)
             }
         }
         loadData()

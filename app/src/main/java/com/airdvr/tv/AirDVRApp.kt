@@ -2,6 +2,7 @@ package com.airdvr.tv
 
 import android.app.Application
 import com.airdvr.tv.data.api.ApiClient
+import com.airdvr.tv.data.stream.StreamModeManager
 import com.airdvr.tv.util.GuidePreferencesManager
 import com.airdvr.tv.util.TokenManager
 
@@ -18,6 +19,7 @@ class AirDVRApp : Application() {
         tokenManager = TokenManager(this)
         guidePreferencesManager = GuidePreferencesManager(this)
         ApiClient.init(tokenManager)
+        StreamModeManager.start()
     }
 
     companion object {

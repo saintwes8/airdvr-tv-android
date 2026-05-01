@@ -16,6 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -136,6 +137,33 @@ fun SettingsScreen(
                 }
             }
             item { Divider() }
+
+            // ── Cloud Storage ──
+            if (uiState.cloudStorageUsage != null) {
+                item { SectionLabel("CLOUD STORAGE") }
+                item {
+                    CloudUsageRow(
+                        used = uiState.cloudStorageUsage!!.usedBytes,
+                        total = uiState.cloudStorageUsage!!.totalBytes,
+                        percent = uiState.cloudStorageUsage!!.percentUsed
+                    )
+                }
+                item {
+                    val days = uiState.cloudRetentionDays
+                    val label = days?.let { "$it days" } ?: "Never"
+                    SettingsRow(
+                        label = "Auto-delete after",
+                        value = label,
+                        onClick = {
+                            val cycle = listOf<Int?>(7, 14, 30, 60, 90, null)
+                            val current = days
+                            val nextIdx = (cycle.indexOf(current) + 1) % cycle.size
+                            viewModel.setCloudRetentionDays(cycle[nextIdx])
+                        }
+                    )
+                }
+                item { Divider() }
+            }
 
             // ── Disk Storage ──
             if (uiState.storageInfo != null) {
@@ -480,6 +508,51 @@ private fun ToggleSwitch(isOn: Boolean, isEnabled: Boolean) {
             Modifier.size(18.dp).clip(CircleShape).background(Color.White)
         )
     }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun CloudUsageRow(used: Long, total: Long, percent: Float) {
+    val barColor = when {
+        percent >= 1.0f -> Color(0xFFEF4444) // red
+        percent >= 0.8f -> Color(0xFFF59E0B) // amber
+        else -> Color(0xFF3B82F6) // blue
+    }
+    val pct = percent.coerceIn(0f, 1f)
+    val totalLabel = if (total > 0L) formatGb(total) else "—"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp, horizontal = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "${formatGb(used)} / $totalLabel Cloud Storage",
+                fontSize = 15.sp, color = PlexTextPrimary
+            )
+            Text(
+                "${(percent * 100).toInt()}%",
+                fontSize = 14.sp, color = PlexTextSecondary
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        LinearProgressIndicator(
+            progress = { pct },
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+            color = barColor,
+            trackColor = PlexBorder
+        )
+    }
+}
+
+private fun formatGb(bytes: Long): String {
+    if (bytes <= 0L) return "0 GB"
+    val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+    return if (gb >= 10) "%.0f GB".format(gb) else "%.1f GB".format(gb)
 }
 
 private fun formatStorageUsage(info: com.airdvr.tv.data.models.StorageInfo?, recordingsUsedMb: Float): String {

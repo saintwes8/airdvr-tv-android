@@ -128,7 +128,43 @@ data class SetZipRequest(
 )
 
 data class StoragePreferenceRequest(
-    @SerializedName("storage_preference") val storagePreference: String
+    @SerializedName("storage_preference") val storagePreference: String? = null,
+    @SerializedName("cloud_retention_days") val cloudRetentionDays: Int? = null
+)
+
+// ── Stream-mode discovery (/api/agent/info) ─────────────────────────────
+
+data class AgentInfo(
+    @SerializedName("localStreamUrl") val localStreamUrl: String? = null,
+    @SerializedName("remoteStreamUrl") val remoteStreamUrl: String? = null,
+    @SerializedName("connected") val connected: Boolean = false
+)
+
+// ── Cloud storage usage / warnings ──────────────────────────────────────
+
+data class StorageUsage(
+    @SerializedName(value = "used_bytes", alternate = ["used"]) val usedBytes: Long = 0L,
+    @SerializedName(value = "total_bytes", alternate = ["total", "limit_bytes"]) val totalBytes: Long = 0L,
+    @SerializedName("plan") val plan: String? = null,
+    @SerializedName("cloud_retention_days") val cloudRetentionDays: Int? = null
+) {
+    val percentUsed: Float
+        get() = if (totalBytes <= 0L) 0f else (usedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1.5f)
+}
+
+data class StorageWarning(
+    @SerializedName("level") val level: String? = null,   // "info", "warning", "critical"
+    @SerializedName("message") val message: String? = null,
+    @SerializedName("code") val code: String? = null
+)
+
+data class StorageWarningsResponse(
+    @SerializedName("warnings") val warnings: List<StorageWarning> = emptyList()
+)
+
+/** PATCH /api/recordings/{id} body for changing per-recording retention. */
+data class RecordingRetentionRequest(
+    @SerializedName("cloud_retention_days") val cloudRetentionDays: Int? = null
 )
 
 // ── Recording schedule ───────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import com.airdvr.tv.AirDVRApp
 import com.airdvr.tv.data.models.SetZipRequest
 import com.airdvr.tv.data.models.StorageInfo
 import com.airdvr.tv.data.models.StoragePreferenceRequest
+import com.airdvr.tv.data.models.StorageUsage
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.repository.AuthRepository
 import com.airdvr.tv.data.repository.RecordingsRepository
@@ -33,6 +34,9 @@ data class SettingsUiState(
     val deviceName: String = "",
     val keepLocalCopyAfterCloud: Boolean = true,
     val storageUpdating: Boolean = false,
+    // Cloud-storage usage + retention
+    val cloudStorageUsage: StorageUsage? = null,
+    val cloudRetentionDays: Int? = null,   // null == "Never"
     val error: String? = null,
     val toastMessage: String? = null
 ) {
@@ -81,11 +85,15 @@ class SettingsViewModel : ViewModel() {
                 val recordingsDeferred = async {
                     try { recordingsRepo.getRecordings().getOrNull() } catch (e: Exception) { null }
                 }
+                val cloudUsageDeferred = async {
+                    try { api.getStorageUsage() } catch (e: Exception) { null }
+                }
 
                 val tunersResponse = tunersDeferred.await()
                 val storageResponse = storageDeferred.await()
                 val profileResponse = profileDeferred.await()
                 val recordings = recordingsDeferred.await()
+                val cloudUsage = cloudUsageDeferred.await()?.takeIf { it.isSuccessful }?.body()
 
                 val total = tunersResponse?.body()?.total ?: 2
                 val inUse = tunersResponse?.body()?.inUse ?: 0
@@ -108,7 +116,9 @@ class SettingsViewModel : ViewModel() {
                     userPlan = plan,
                     storagePreference = storagePref,
                     deviceName = deviceName,
-                    recordingsUsedMb = recordingsUsedMb
+                    recordingsUsedMb = recordingsUsedMb,
+                    cloudStorageUsage = cloudUsage,
+                    cloudRetentionDays = cloudUsage?.cloudRetentionDays
                 )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
@@ -176,11 +186,52 @@ class SettingsViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(keepLocalCopyAfterCloud = next)
     }
 
+    /** Set the global cloud-recording retention. `days = null` → "Never". */
+    fun setCloudRetentionDays(days: Int?) {
+        val current = _uiState.value.cloudRetentionDays
+        if (current == days) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(storageUpdating = true)
+            try {
+                val resp = api.setStoragePreference(
+                    StoragePreferenceRequest(cloudRetentionDays = days)
+                )
+                if (resp.isSuccessful) {
+                    val label = days?.let { "$it days" } ?: "Never"
+                    _uiState.value = _uiState.value.copy(
+                        cloudRetentionDays = days,
+                        storageUpdating = false,
+                        toastMessage = "Cloud retention: $label"
+                    )
+                    // Refresh cloud usage to reflect any pruning that may follow.
+                    val usage = try { api.getStorageUsage() } catch (_: Exception) { null }
+                    if (usage?.isSuccessful == true) {
+                        _uiState.value = _uiState.value.copy(cloudStorageUsage = usage.body())
+                    }
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        storageUpdating = false,
+                        toastMessage = if (resp.code() == 403) "Requires Pro subscription" else "Could not update retention"
+                    )
+                }
+                kotlinx.coroutines.delay(3000)
+                _uiState.value = _uiState.value.copy(toastMessage = null)
+            } catch (_: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    storageUpdating = false,
+                    toastMessage = "Could not connect. Check your network."
+                )
+                kotlinx.coroutines.delay(3000)
+                _uiState.value = _uiState.value.copy(toastMessage = null)
+            }
+        }
+    }
+
     private fun setStoragePreference(pref: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(storageUpdating = true)
             try {
-                val resp = api.setStoragePreference(StoragePreferenceRequest(pref))
+                val resp = api.setStoragePreference(StoragePreferenceRequest(storagePreference = pref))
                 if (resp.isSuccessful) {
                     val applied = resp.body()?.storagePreference ?: pref
                     _uiState.value = _uiState.value.copy(

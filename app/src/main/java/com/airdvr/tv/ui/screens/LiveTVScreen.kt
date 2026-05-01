@@ -1005,7 +1005,8 @@ private fun FullscreenLayout(
                 ccEnabled = uiState.ccEnabled,
                 selectedIndex = uiState.actionButtonIndex,
                 schedules = uiState.schedules,
-                sportsScore = uiState.currentSportsScore
+                sportsScore = uiState.currentSportsScore,
+                streamMode = uiState.streamMode
             )
         }
     }
@@ -1087,7 +1088,8 @@ private fun FullscreenActionOverlay(
     ccEnabled: Boolean,
     selectedIndex: Int,
     schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList(),
-    sportsScore: GameScore? = null
+    sportsScore: GameScore? = null,
+    streamMode: com.airdvr.tv.data.stream.StreamMode = com.airdvr.tv.data.stream.StreamMode.TUNNEL
 ) {
     if (channel == null) return
     Box(
@@ -1109,7 +1111,10 @@ private fun FullscreenActionOverlay(
                     val isRecording = program != null && schedules.any { s ->
                         s.title == program.title && s.channelNumber == channel?.guideNumber
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
                         OverlayActionBtn(Icons.Filled.GridView, "MultiView", selectedIndex == 0)
                         OverlayActionBtn(
                             Icons.Filled.FiberManualRecord,
@@ -1123,6 +1128,8 @@ private fun FullscreenActionOverlay(
                         )
                         OverlayActionBtn(Icons.Filled.Settings, "Quality", selectedIndex == 3)
                         OverlayActionBtn(Icons.Filled.ClosedCaption, if (ccEnabled) "CC On" else "CC Off", selectedIndex == 4)
+                        Spacer(Modifier.weight(1f))
+                        StreamModeBadge(streamMode)
                     }
 
                     // Live sports scoreboard takes the place of the title block when matched.
@@ -1225,6 +1232,31 @@ private fun FullscreenActionOverlay(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun StreamModeBadge(mode: com.airdvr.tv.data.stream.StreamMode) {
+    val (label, color) = when (mode) {
+        com.airdvr.tv.data.stream.StreamMode.LOCAL -> "Local" to Color(0xFF22C55E)
+        com.airdvr.tv.data.stream.StreamMode.REMOTE -> "Remote" to Color(0xFF3B82F6)
+        com.airdvr.tv.data.stream.StreamMode.TUNNEL -> "Relay" to Color(0xFFF59E0B)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier
+            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .border(0.5.dp, PlexBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    ) {
+        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+        Text(
+            label,
+            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = PlexTextPrimary, letterSpacing = 0.3.sp
+        )
     }
 }
 

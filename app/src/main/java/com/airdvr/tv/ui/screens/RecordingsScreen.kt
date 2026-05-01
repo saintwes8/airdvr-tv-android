@@ -39,6 +39,7 @@ import androidx.tv.material3.*
 import coil.compose.AsyncImage
 import com.airdvr.tv.data.models.Recording
 import com.airdvr.tv.data.models.RecordingSchedule
+import com.airdvr.tv.data.models.StorageWarning
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.RecordingCategory
@@ -59,10 +60,17 @@ fun RecordingsScreen(
     var deleteTarget by remember { mutableStateOf<Recording?>(null) }
     var cancelTarget by remember { mutableStateOf<RecordingSchedule?>(null) }
     var optionsTarget by remember { mutableStateOf<Recording?>(null) }
+    var retentionTarget by remember { mutableStateOf<Recording?>(null) }
+    var deleteCloudTarget by remember { mutableStateOf<Recording?>(null) }
 
     Column(
         modifier = Modifier.fillMaxSize().background(PlexBg)
     ) {
+        // Storage warnings banner
+        uiState.storageWarnings.firstOrNull()?.let { warning ->
+            StorageWarningBanner(warning)
+        }
+
         // Top bar
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -336,10 +344,22 @@ fun RecordingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     if (isCloud) {
                         TextButton(onClick = {
-                            viewModel.showToast("Coming soon")
+                            retentionTarget = rec
                             optionsTarget = null
                         }) {
-                            androidx.compose.material3.Text("Download Local Copy", color = PlexTextPrimary)
+                            androidx.compose.material3.Text("Change Retention", color = PlexTextPrimary)
+                        }
+                        TextButton(onClick = {
+                            deleteCloudTarget = rec
+                            optionsTarget = null
+                        }) {
+                            androidx.compose.material3.Text("Delete from Cloud", color = Color(0xFFF59E0B))
+                        }
+                        TextButton(onClick = {
+                            deleteTarget = rec
+                            optionsTarget = null
+                        }) {
+                            androidx.compose.material3.Text("Delete Everywhere", color = Color(0xFFEF4444))
                         }
                     } else {
                         TextButton(onClick = {
@@ -348,12 +368,12 @@ fun RecordingsScreen(
                         }) {
                             androidx.compose.material3.Text("Upload to Cloud", color = PlexTextPrimary)
                         }
-                    }
-                    TextButton(onClick = {
-                        deleteTarget = rec
-                        optionsTarget = null
-                    }) {
-                        androidx.compose.material3.Text("Delete", color = Color(0xFFEF4444))
+                        TextButton(onClick = {
+                            deleteTarget = rec
+                            optionsTarget = null
+                        }) {
+                            androidx.compose.material3.Text("Delete", color = Color(0xFFEF4444))
+                        }
                     }
                 }
             },
@@ -362,6 +382,112 @@ fun RecordingsScreen(
                     androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
                 }
             }
+        )
+    }
+
+    // Retention picker dialog
+    if (retentionTarget != null) {
+        val rec = retentionTarget!!
+        val options = listOf<Pair<String, Int?>>(
+            "7 days" to 7,
+            "14 days" to 14,
+            "30 days" to 30,
+            "60 days" to 60,
+            "90 days" to 90,
+            "Never" to null
+        )
+        AlertDialog(
+            onDismissRequest = { retentionTarget = null },
+            containerColor = PlexCard,
+            title = {
+                androidx.compose.material3.Text(
+                    "Auto-delete after",
+                    color = PlexTextPrimary, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    options.forEach { (label, days) ->
+                        TextButton(onClick = {
+                            rec.id?.let { viewModel.setRecordingRetention(it, days) }
+                            retentionTarget = null
+                        }) {
+                            androidx.compose.material3.Text(label, color = PlexTextPrimary)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { retentionTarget = null }) {
+                    androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
+                }
+            }
+        )
+    }
+
+    // Delete-from-cloud confirmation dialog
+    if (deleteCloudTarget != null) {
+        AlertDialog(
+            onDismissRequest = { deleteCloudTarget = null },
+            containerColor = PlexCard,
+            title = {
+                androidx.compose.material3.Text(
+                    "Delete from Cloud",
+                    color = PlexTextPrimary, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    "Remove \"${deleteCloudTarget?.title ?: ""}\" from cloud storage? Local copy (if any) will be kept.",
+                    color = PlexTextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleteCloudTarget?.id?.let { viewModel.deleteRecordingCloud(it) }
+                    deleteCloudTarget = null
+                }) {
+                    androidx.compose.material3.Text("Delete", color = Color(0xFFF59E0B))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteCloudTarget = null }) {
+                    androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
+                }
+            }
+        )
+    }
+}
+
+// ─── Storage warning banner ─────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun StorageWarningBanner(warning: StorageWarning) {
+    val (bg, fg) = when (warning.level?.lowercase()) {
+        "critical" -> Color(0xFFEF4444).copy(alpha = 0.18f) to Color(0xFFEF4444)
+        "warning" -> Color(0xFFF59E0B).copy(alpha = 0.18f) to Color(0xFFF59E0B)
+        else -> Color(0xFF3B82F6).copy(alpha = 0.18f) to Color(0xFF3B82F6)
+    }
+    val borderColor = fg.copy(alpha = 0.5f)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .background(bg, RoundedCornerShape(6.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            Modifier.size(8.dp).clip(CircleShape).background(fg)
+        )
+        Text(
+            warning.message ?: "",
+            fontSize = 13.sp, color = fg,
+            fontWeight = FontWeight.Medium
         )
     }
 }

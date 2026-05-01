@@ -76,4 +76,24 @@ interface AirDVRApi {
 
     @GET("api/sports/scores/today")
     suspend fun getSportsScoresToday(): Response<SportsScoresResponse>
+
+    // ── Three-tier streaming + storage management ──────────────────────
+
+    @GET("api/agent/info")
+    suspend fun getAgentInfo(): Response<AgentInfo>
+
+    @GET("api/user/storage-usage")
+    suspend fun getStorageUsage(): Response<StorageUsage>
+
+    @GET("api/user/storage-warnings")
+    suspend fun getStorageWarnings(): Response<StorageWarningsResponse>
+
+    @PATCH("api/recordings/{id}")
+    suspend fun patchRecordingRetention(
+        @Path("id") id: String,
+        @Body body: RecordingRetentionRequest
+    ): Response<Unit>
+
+    @DELETE("api/recordings/{id}/cloud")
+    suspend fun deleteRecordingCloud(@Path("id") id: String): Response<Unit>
 }
