@@ -305,6 +305,18 @@ class LiveTVViewModel : ViewModel() {
         _uiState.value = _uiState.value.copy(isTuning = false, error = error)
     }
 
+    /** Multiview-pane equivalent of onPlayerReady — clears the spinner on pane `index`. */
+    fun onPanePlayerReady(index: Int) {
+        val s = _uiState.value
+        val panes = s.multiViewPanes
+        if (index !in panes.indices) return
+        if (!panes[index].isTuning) return
+        val updated = panes.toMutableList().apply {
+            this[index] = this[index].copy(isTuning = false)
+        }
+        _uiState.value = s.copy(multiViewPanes = updated)
+    }
+
     // ── Guide Grid Navigation ───────────────────────────────────────────────
 
     /**
@@ -1006,6 +1018,7 @@ class LiveTVViewModel : ViewModel() {
         }
         val quality = guidePrefsManager.quality.value
         val url = streamRepo.getStreamUrl(channel.guideNumber, quality)
+        Log.d("PIP", "setPipChannel ch=${channel.guideNumber} ${channel.guideName} url=$url")
         _uiState.value = _uiState.value.copy(
             pipChannel = channel,
             pipStreamUrl = url,
@@ -1106,6 +1119,11 @@ class LiveTVViewModel : ViewModel() {
         val newKeys = if (s.trackedGameKeys.contains(key)) {
             s.trackedGameKeys - key
         } else {
+            // Cap at 3 scorebugs
+            if (s.trackedGameKeys.size >= 3) {
+                showToast("Up to 3 games at once")
+                return
+            }
             s.trackedGameKeys + key
         }
         // Recompute which games are currently being shown
@@ -1117,6 +1135,21 @@ class LiveTVViewModel : ViewModel() {
         )
         if (newKeys.isEmpty()) stopScorebugPolling()
         else startScorebugPollingIfNeeded()
+    }
+
+    /** Pick a game from the picker: adds it to tracked scorebugs and closes the picker. */
+    fun pickGame(game: GameScore) {
+        toggleTrackGame(game)
+        closeGamePicker()
+    }
+
+    /** Remove all scorebugs (BACK with bugs visible). */
+    fun clearScorebugs() {
+        _uiState.value = _uiState.value.copy(
+            trackedGameKeys = emptySet(),
+            scorebugGames = emptyList()
+        )
+        stopScorebugPolling()
     }
 
     /** Find a channel matching the game's broadcast channel and tune the main player to it. */

@@ -7,11 +7,11 @@ import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
-// ── Plex Dark Palette ───────────────────────────────────────────────────
-val PlexBg = Color(0xFF0D1117)
-val PlexSurface = Color(0xFF161B22)
-val PlexCard = Color(0xFF21262D)
-val PlexBorder = Color(0xFF30363D)
+// ── Pure-black palette (background uses #000000 across all screens) ──
+val PlexBg = Color(0xFF000000)
+val PlexSurface = Color(0xFF0A0A0A)
+val PlexCard = Color(0xFF141414)
+val PlexBorder = Color(0xFF2A2A2A)
 
 val PlexTextPrimary = Color(0xFFE6EDF3)
 val PlexTextSecondary = Color(0xFF8B949E)

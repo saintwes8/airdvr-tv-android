@@ -87,6 +87,7 @@ import com.airdvr.tv.ui.viewmodels.gameKey
 import kotlinx.coroutines.delay
 import com.airdvr.tv.util.Constants
 import com.airdvr.tv.util.TeamLogos
+import com.airdvr.tv.util.parseIsoToEpochSec
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -136,11 +137,34 @@ fun LiveTVScreen(
     }
 
     DisposableEffect(Unit) {
-        val listener = object : Player.Listener {
+        // Main player (pane 0 / fullscreen) — drives main isTuning state
+        val mainListener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) { if (state == Player.STATE_READY) viewModel.onPlayerReady() }
             override fun onPlayerError(error: PlaybackException) { viewModel.onPlayerError(error.message ?: "Playback error") }
         }
-        exoPlayers[0].addListener(listener)
+        exoPlayers[0].addListener(mainListener)
+        // MultiView panes 1..3 — each clears its own pane.isTuning when ready
+        val paneListeners = (1 until exoPlayers.size).map { i ->
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(state: Int) {
+                    if (state == Player.STATE_READY) viewModel.onPanePlayerReady(i)
+                }
+                override fun onPlayerError(error: PlaybackException) {
+                    viewModel.onPanePlayerReady(i)  // Clear spinner even on error
+                }
+            }
+        }
+        paneListeners.forEachIndexed { idx, listener -> exoPlayers[idx + 1].addListener(listener) }
+        // PiP player — log state transitions for debugging
+        val pipListener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                android.util.Log.d("PIP", "playbackState=$state (READY=3 BUFFERING=2 IDLE=1 ENDED=4)")
+            }
+            override fun onPlayerError(error: PlaybackException) {
+                android.util.Log.e("PIP", "playerError: ${error.errorCodeName} ${error.message}")
+            }
+        }
+        pipPlayer.addListener(pipListener)
         onDispose {
             exoPlayers.forEach { it.release() }
             pipPlayer.release()
@@ -197,9 +221,11 @@ fun LiveTVScreen(
     LaunchedEffect(uiState.pipStreamUrl) {
         val url = uiState.pipStreamUrl
         if (url.isNullOrBlank()) {
+            android.util.Log.d("PIP", "stream cleared — stopping PiP player")
             pipPlayer.stop()
             pipPlayer.clearMediaItems()
         } else if (pipPlayer.currentMediaItem?.localConfiguration?.uri?.toString() != url) {
+            android.util.Log.d("PIP", "Playing: $url")
             loadHls(url, pipPlayer)
         }
     }
@@ -524,8 +550,11 @@ private fun handleFullscreenKey(
             if (uiState.pipEnabled) { vm.togglePipAudio(); true } else false
         }
         KeyEvent.KEYCODE_BACK -> {
-            if (uiState.pipEnabled) { vm.closePip(); true }
-            else { vm.enterGuide(); true }
+            when {
+                uiState.pipEnabled -> { vm.closePip(); true }
+                uiState.scorebugGames.isNotEmpty() -> { vm.clearScorebugs(); true }
+                else -> { vm.enterGuide(); true }
+            }
         }
         else -> false
     }
@@ -1120,9 +1149,7 @@ private fun FullscreenLayout(
             GamePickerOverlay(
                 games = uiState.availableGames,
                 trackedKeys = uiState.trackedGameKeys,
-                channels = uiState.channels,
-                onToggle = { viewModel.toggleTrackGame(it) },
-                onWatch = { viewModel.watchGame(it) },
+                onPick = { viewModel.pickGame(it) },
                 onClose = { viewModel.closeGamePicker() }
             )
         }
@@ -2150,16 +2177,19 @@ private fun PipChannelPicker(
 private fun GamePickerOverlay(
     games: List<GameScore>,
     trackedKeys: Set<String>,
-    channels: List<Channel>,
-    onToggle: (GameScore) -> Unit,
-    onWatch: (GameScore) -> Unit,
+    onPick: (GameScore) -> Unit,
     onClose: () -> Unit
 ) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(games.size) {
+        if (games.isNotEmpty()) {
+            try { firstFocus.requestFocus() } catch (_: Exception) {}
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
-            .clickable(onClick = onClose),
+            .background(Color.Black.copy(alpha = 0.85f)),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -2176,7 +2206,7 @@ private fun GamePickerOverlay(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "Selected scores stay on screen as you change channels",
+                "Press SELECT to add a scorebug · BACK to close",
                 fontSize = 12.sp, color = PlexTextTertiary
             )
             Spacer(Modifier.height(12.dp))
@@ -2202,17 +2232,14 @@ private fun GamePickerOverlay(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    itemsIndexed(games) { _, game ->
+                    itemsIndexed(games) { idx, game ->
                         val key = gameKey(game)
                         val isTracked = key in trackedKeys
-                        val inLineup = game.channel != null &&
-                            channels.any { it.guideNumber == game.channel }
                         GamePickerRow(
                             game = game,
                             isTracked = isTracked,
-                            canWatch = inLineup,
-                            onToggle = { onToggle(game) },
-                            onWatch = { onWatch(game) }
+                            onPick = { onPick(game) },
+                            modifier = if (idx == 0) Modifier.focusRequester(firstFocus) else Modifier
                         )
                     }
                 }
@@ -2221,123 +2248,156 @@ private fun GamePickerOverlay(
     }
 }
 
+/**
+ * Format the score-or-time display for a game row, based on status.
+ *  - InProgress / live → "5-3"
+ *  - Final            → "5-3" (FINAL badge below)
+ *  - Scheduled / TBD  → start time ("7:30 PM")
+ */
+private fun gameMiddleText(game: GameScore): String {
+    val s = (game.status ?: "").lowercase()
+    val a = game.awayScore
+    val h = game.homeScore
+    return when {
+        s.contains("final") || s.contains("progress") || s.contains("live") ||
+        s == "f/ot" || s == "f/so" -> "${a ?: "-"} – ${h ?: "-"}"
+        else -> {
+            val epoch = parseIsoToEpochSec(game.startTime)
+            if (epoch > 0L) {
+                val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
+                fmt.format(Date(epoch * 1000L))
+            } else "TBD"
+        }
+    }
+}
+
+/** Short status label shown under the score/time. */
+private fun gameStatusBadge(game: GameScore): String {
+    val s = (game.status ?: "").lowercase().replace(" ", "")
+    return when {
+        s.contains("notnecessary") -> ""
+        s.contains("final") -> "FINAL"
+        s.contains("progress") || s.contains("live") ->
+            game.quarter?.takeIf { it.isNotBlank() } ?: "LIVE"
+        s.contains("scheduled") || s.isBlank() -> ""
+        s.contains("postponed") -> "PPD"
+        s.contains("canceled") || s.contains("cancelled") -> "CANCELED"
+        s.contains("suspended") -> "SUSPENDED"
+        s.contains("delayed") -> "DELAYED"
+        else -> ""
+    }
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun GamePickerRow(
     game: GameScore,
     isTracked: Boolean,
-    canWatch: Boolean,
-    onToggle: () -> Unit,
-    onWatch: () -> Unit
+    onPick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val league = game.league?.lowercase() ?: ""
     val awayLogo = TeamLogos.urlFor(league, game.awayTeam)
     val homeLogo = TeamLogos.urlFor(league, game.homeTeam)
-    val awayAbbr = TeamLogos.abbrev(league, game.awayTeam)
-    val homeAbbr = TeamLogos.abbrev(league, game.homeTeam)
+    val awayName = TeamLogos.shortName(game.awayTeam).ifBlank { game.awayTeam ?: "" }
+    val homeName = TeamLogos.shortName(game.homeTeam).ifBlank { game.homeTeam ?: "" }
+    val middle = gameMiddleText(game)
+    val badge = gameStatusBadge(game)
     val live = isInProgress(game.status)
-    val isFinal = (game.status ?: "").lowercase().contains("final")
-    val statusText = when {
-        isFinal -> "FINAL"
-        live -> game.quarter?.takeIf { it.isNotBlank() } ?: "LIVE"
-        else -> game.status ?: ""
-    }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .background(PlexSurface, RoundedCornerShape(6.dp))
-            .border(
-                if (isTracked) 2.dp else 0.dp,
-                if (isTracked) PlexAccent else Color.Transparent,
-                RoundedCornerShape(6.dp)
+    Surface(
+        onClick = onPick,
+        modifier = modifier.fillMaxWidth().height(64.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (isTracked) PlexAccent.copy(alpha = 0.18f) else PlexSurface,
+            focusedContainerColor = PlexAccent.copy(alpha = 0.32f)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = if (isTracked) androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(1.dp, PlexAccent.copy(alpha = 0.5f))
+            ) else androidx.tv.material3.Border.None,
+            focusedBorder = androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
             )
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        )
     ) {
-        // League badge
-        Text(
-            league.uppercase().ifBlank { "GAME" },
-            fontSize = 9.sp, fontWeight = FontWeight.Bold,
-            color = PlexTextTertiary,
-            modifier = Modifier
-                .background(PlexBg, RoundedCornerShape(3.dp))
-                .padding(horizontal = 5.dp, vertical = 2.dp)
-        )
-        // Away logo + abbrev
-        if (!awayLogo.isNullOrBlank()) {
-            AsyncImage(model = awayLogo, contentDescription = game.awayTeam,
-                modifier = Modifier.size(24.dp), contentScale = ContentScale.Fit)
-        }
-        Text(awayAbbr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary)
-        // Score
-        Text(
-            "${game.awayScore ?: "-"} – ${game.homeScore ?: "-"}",
-            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
-        )
-        Text(homeAbbr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary)
-        if (!homeLogo.isNullOrBlank()) {
-            AsyncImage(model = homeLogo, contentDescription = game.homeTeam,
-                modifier = Modifier.size(24.dp), contentScale = ContentScale.Fit)
-        }
-        // Status
-        if (statusText.isNotBlank()) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (live) Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRedDot))
-                Text(statusText, fontSize = 11.sp, color = if (live) LiveRedDot else PlexTextSecondary, fontWeight = FontWeight.SemiBold)
-            }
-        }
-        Spacer(Modifier.weight(1f))
-        // Watch button (only if channel in lineup)
-        if (canWatch) {
-            Surface(
-                onClick = onWatch,
-                shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
-                colors = ClickableSurfaceDefaults.colors(
-                    containerColor = PlexBg,
-                    focusedContainerColor = PlexAccent
-                ),
-                border = ClickableSurfaceDefaults.border(
-                    focusedBorder = androidx.tv.material3.Border(
-                        border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // League badge
+            Text(
+                league.uppercase().ifBlank { "—" },
+                fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                color = PlexTextSecondary,
+                modifier = Modifier
+                    .width(34.dp)
+                    .background(PlexBg, RoundedCornerShape(3.dp))
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                textAlign = TextAlign.Center
+            )
+            // Away logo + name
+            Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                if (!awayLogo.isNullOrBlank()) {
+                    AsyncImage(
+                        model = awayLogo, contentDescription = game.awayTeam,
+                        modifier = Modifier.size(32.dp), contentScale = ContentScale.Fit
                     )
-                ),
-                modifier = Modifier.height(28.dp)
-            ) {
-                Box(
-                    Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("WATCH", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary)
                 }
             }
-        }
-        // Track toggle
-        Surface(
-            onClick = onToggle,
-            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = if (isTracked) PlexAccent.copy(alpha = 0.25f) else PlexBg,
-                focusedContainerColor = PlexAccent.copy(alpha = 0.4f)
-            ),
-            border = ClickableSurfaceDefaults.border(
-                focusedBorder = androidx.tv.material3.Border(
-                    border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
-                )
-            ),
-            modifier = Modifier.height(28.dp)
-        ) {
-            Box(
-                Modifier.fillMaxSize().padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center
+            Text(
+                awayName,
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            // Score or Time + badge
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.width(80.dp)
             ) {
                 Text(
-                    if (isTracked) "TRACKING" else "TRACK",
-                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    color = if (isTracked) PlexAccent else PlexTextPrimary
+                    middle,
+                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
                 )
+                if (badge.isNotBlank()) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (live) Box(Modifier.size(5.dp).clip(CircleShape).background(LiveRedDot))
+                        Text(
+                            badge,
+                            fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                            color = if (live) LiveRedDot else PlexTextTertiary
+                        )
+                    }
+                }
+            }
+            // Home name + logo
+            Text(
+                homeName,
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.End
+            )
+            Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                if (!homeLogo.isNullOrBlank()) {
+                    AsyncImage(
+                        model = homeLogo, contentDescription = game.homeTeam,
+                        modifier = Modifier.size(32.dp), contentScale = ContentScale.Fit
+                    )
+                }
+            }
+            // Tracked indicator
+            if (isTracked) {
+                Icon(
+                    Icons.Filled.Check, "Tracked",
+                    tint = PlexAccent,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Box(Modifier.size(18.dp))
             }
         }
     }
@@ -2358,7 +2418,7 @@ private fun ScorebugOverlay(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        games.take(4).forEach { game ->
+        games.take(3).forEach { game ->
             ScorebugRow(game = game, channels = channels)
         }
     }
@@ -2407,62 +2467,56 @@ private fun ScorebugRow(
         else -> game.status?.take(6) ?: ""
     }
 
+    val statusColor = when {
+        isFinal -> PlexTextSecondary
+        isClose -> Color(0xFFFFB020)
+        live -> LiveRedDot
+        else -> PlexTextSecondary
+    }
+
     Box(
         modifier = Modifier
             .size(width = 280.dp, height = 48.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(Color.Black.copy(alpha = 0.85f))
+            .background(Color(0xE6000000))
             .border(if (isClose) 2.dp else 1.dp, borderColor, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp)
+            .padding(horizontal = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // Away logo
             if (!awayLogo.isNullOrBlank()) {
                 AsyncImage(
                     model = awayLogo,
                     contentDescription = game.awayTeam,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(20.dp),
                     contentScale = ContentScale.Fit
                 )
             } else {
-                Box(Modifier.size(24.dp))
+                Box(Modifier.size(20.dp))
             }
-            Text(awayAbbr, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                color = PlexTextPrimary, modifier = Modifier.width(32.dp))
-            // Score
             Text(
-                "$awayS-$homeS",
+                awayAbbr,
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary
+            )
+            // Score (or dash for non-live)
+            Text(
+                if (live || isFinal) "$awayS – $homeS" else "vs",
                 fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
             )
-            Text(homeAbbr, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                color = PlexTextPrimary, modifier = Modifier.width(32.dp))
-            // Home logo
-            if (!homeLogo.isNullOrBlank()) {
-                AsyncImage(
-                    model = homeLogo,
-                    contentDescription = game.homeTeam,
-                    modifier = Modifier.size(24.dp),
-                    contentScale = ContentScale.Fit
-                )
-            } else {
-                Box(Modifier.size(24.dp))
-            }
-            Spacer(Modifier.weight(1f))
-            // Period / status
-            Column(horizontalAlignment = Alignment.End) {
+            // Period / status (centered)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     statusText.uppercase(),
                     fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    color = when {
-                        isFinal -> PlexTextSecondary
-                        isClose -> Color(0xFFFFB020)
-                        live -> LiveRedDot
-                        else -> PlexTextSecondary
-                    }
+                    color = statusColor
                 )
                 if (live && !game.timeRemaining.isNullOrBlank()) {
                     Text(
@@ -2470,6 +2524,22 @@ private fun ScorebugRow(
                         fontSize = 9.sp, color = PlexTextTertiary
                     )
                 }
+            }
+            Text(
+                homeAbbr,
+                fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary
+            )
+            // Home logo
+            if (!homeLogo.isNullOrBlank()) {
+                AsyncImage(
+                    model = homeLogo,
+                    contentDescription = game.homeTeam,
+                    modifier = Modifier.size(20.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Box(Modifier.size(20.dp))
             }
         }
     }
