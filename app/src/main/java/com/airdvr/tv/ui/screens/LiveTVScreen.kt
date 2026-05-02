@@ -83,6 +83,8 @@ import com.airdvr.tv.ui.viewmodels.MultiViewNavDirection
 import com.airdvr.tv.ui.viewmodels.PaneState
 import com.airdvr.tv.ui.viewmodels.ScreenMode
 import com.airdvr.tv.ui.viewmodels.SportsCalendarViewModel
+import com.airdvr.tv.ui.viewmodels.gameKey
+import kotlinx.coroutines.delay
 import com.airdvr.tv.util.Constants
 import com.airdvr.tv.util.TeamLogos
 import java.text.SimpleDateFormat
@@ -125,6 +127,13 @@ fun LiveTVScreen(
     val exoPlayers = remember {
         List(4) { ExoPlayer.Builder(context).setLoadControl(loadControl).build().also { it.playWhenReady = true } }
     }
+    // Independent player for the PiP window. Uses a separate tuner; muted by default.
+    val pipPlayer = remember {
+        ExoPlayer.Builder(context).setLoadControl(loadControl).build().also {
+            it.playWhenReady = true
+            it.volume = 0f
+        }
+    }
 
     DisposableEffect(Unit) {
         val listener = object : Player.Listener {
@@ -132,7 +141,10 @@ fun LiveTVScreen(
             override fun onPlayerError(error: PlaybackException) { viewModel.onPlayerError(error.message ?: "Playback error") }
         }
         exoPlayers[0].addListener(listener)
-        onDispose { exoPlayers.forEach { it.release() } }
+        onDispose {
+            exoPlayers.forEach { it.release() }
+            pipPlayer.release()
+        }
     }
 
     fun loadHls(url: String, player: ExoPlayer) {
@@ -169,12 +181,26 @@ fun LiveTVScreen(
             .build()
         exoPlayers[0].trackSelectionParameters = params
     }
-    // Volume
-    LaunchedEffect(uiState.activePaneIndex, uiState.mode, uiState.isMuted) {
+    // Volume — accounts for PiP audio swap when PiP is enabled in fullscreen.
+    LaunchedEffect(uiState.activePaneIndex, uiState.mode, uiState.isMuted, uiState.audioOnPip, uiState.pipChannel) {
         if (uiState.mode == ScreenMode.MULTIVIEW) {
             exoPlayers.forEachIndexed { i, p -> p.volume = if (i == uiState.activePaneIndex && !uiState.isMuted) 1f else 0f }
+            pipPlayer.volume = 0f
         } else {
-            exoPlayers[0].volume = if (uiState.isMuted) 0f else 1f
+            val muted = uiState.isMuted
+            val pipAudio = uiState.pipChannel != null && uiState.audioOnPip
+            exoPlayers[0].volume = if (!muted && !pipAudio) 1f else 0f
+            pipPlayer.volume = if (!muted && pipAudio) 1f else 0f
+        }
+    }
+    // PiP stream loader: load when URL changes; stop when cleared (releases tuner).
+    LaunchedEffect(uiState.pipStreamUrl) {
+        val url = uiState.pipStreamUrl
+        if (url.isNullOrBlank()) {
+            pipPlayer.stop()
+            pipPlayer.clearMediaItems()
+        } else if (pipPlayer.currentMediaItem?.localConfiguration?.uri?.toString() != url) {
+            loadHls(url, pipPlayer)
         }
     }
     // Restore main player leaving multiview
@@ -250,7 +276,7 @@ fun LiveTVScreen(
             Box(Modifier.fillMaxSize()) {
                 when (uiState.mode) {
                     ScreenMode.GUIDE -> GuideLayout(uiState, exoPlayers[0], viewModel)
-                    ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], viewModel)
+                    ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], pipPlayer, viewModel)
                     ScreenMode.MULTIVIEW -> MultiViewLayout(uiState, exoPlayers, viewModel)
                 }
                 Box(
@@ -264,7 +290,7 @@ fun LiveTVScreen(
         } else {
             when (uiState.mode) {
                 ScreenMode.GUIDE -> GuideLayout(uiState, exoPlayers[0], viewModel)
-                ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], viewModel)
+                ScreenMode.FULLSCREEN -> FullscreenLayout(uiState, exoPlayers[0], pipPlayer, viewModel)
                 ScreenMode.MULTIVIEW -> MultiViewLayout(uiState, exoPlayers, viewModel)
             }
         }
@@ -433,11 +459,43 @@ private fun handleFullscreenKey(
             else -> false
         }
     }
+    // PiP channel picker
+    if (uiState.pipPickerVisible) {
+        return when (code) {
+            KeyEvent.KEYCODE_DPAD_UP -> { vm.navigateUp(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { vm.navigateDown(); true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                uiState.focusedChannel?.let { vm.setPipChannel(it) }
+                true
+            }
+            KeyEvent.KEYCODE_BACK -> { vm.closePipPicker(); true }
+            else -> false
+        }
+    }
+    // Game picker
+    if (uiState.gamePickerVisible) {
+        return when (code) {
+            KeyEvent.KEYCODE_BACK -> { vm.closeGamePicker(); true }
+            else -> false  // game picker uses focusable surfaces for d-pad nav
+        }
+    }
     // Any D-pad press in fullscreen pings the now playing bar
     when (code) {
         KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> vm.pingNowPlayingBar()
+    }
+    // PiP focused — controls operate on PiP
+    if (uiState.pipFocused) {
+        return when (code) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { vm.unfocusPip(); true }
+            KeyEvent.KEYCODE_DPAD_UP -> { vm.pipChannelUp(); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { vm.pipChannelDown(); true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.swapPipAndMain(); true }
+            KeyEvent.KEYCODE_BACK -> { vm.closePip(); true }
+            KeyEvent.KEYCODE_VOLUME_MUTE -> { vm.togglePipAudio(); true }
+            else -> false
+        }
     }
     // Fullscreen overlay (action buttons) visible
     if (uiState.showFullscreenOverlay) {
@@ -454,11 +512,21 @@ private fun handleFullscreenKey(
         KeyEvent.KEYCODE_DPAD_UP -> { vm.showFullscreenOverlay(); true }
         KeyEvent.KEYCODE_DPAD_DOWN -> { vm.enterGuide(); true }
         KeyEvent.KEYCODE_DPAD_LEFT -> { vm.showNavRail(); true }
-        KeyEvent.KEYCODE_DPAD_RIGHT -> { vm.showFullscreenOverlay(); true }
+        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+            // RIGHT focuses PiP if active, otherwise opens overlay
+            if (uiState.pipEnabled) { vm.focusPip(); true }
+            else { vm.showFullscreenOverlay(); true }
+        }
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.showFullscreenOverlay(); true }
         KeyEvent.KEYCODE_CHANNEL_UP -> { vm.channelUp(); true }
         KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.channelDown(); true }
-        KeyEvent.KEYCODE_BACK -> { vm.enterGuide(); true }
+        KeyEvent.KEYCODE_VOLUME_MUTE -> {
+            if (uiState.pipEnabled) { vm.togglePipAudio(); true } else false
+        }
+        KeyEvent.KEYCODE_BACK -> {
+            if (uiState.pipEnabled) { vm.closePip(); true }
+            else { vm.enterGuide(); true }
+        }
         else -> false
     }
 }
@@ -962,6 +1030,7 @@ private fun ChannelLabel(
 private fun FullscreenLayout(
     uiState: com.airdvr.tv.ui.viewmodels.LiveTVUiState,
     exoPlayer: ExoPlayer,
+    pipPlayer: ExoPlayer,
     viewModel: LiveTVViewModel
 ) {
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -975,6 +1044,31 @@ private fun FullscreenLayout(
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f)), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = PlexTextPrimary, modifier = Modifier.size(40.dp))
             }
+        }
+
+        // PiP window — top-right, separate ExoPlayer instance
+        if (uiState.pipEnabled) {
+            PipOverlay(
+                channel = uiState.pipChannel,
+                focused = uiState.pipFocused,
+                audioOnPip = uiState.audioOnPip,
+                player = pipPlayer,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 24.dp, end = 24.dp)
+            )
+        }
+
+        // Scorebug column — top-right, offset below PiP if active
+        if (uiState.scorebugGames.isNotEmpty()) {
+            val topPad = if (uiState.pipEnabled) (24 + 180 + 12).dp else 24.dp
+            ScorebugOverlay(
+                games = uiState.scorebugGames,
+                channels = uiState.channels,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = topPad, end = 24.dp)
+            )
         }
 
         // Slim bottom bar (32dp) — auto-hides after 5s
@@ -1006,7 +1100,30 @@ private fun FullscreenLayout(
                 selectedIndex = uiState.actionButtonIndex,
                 schedules = uiState.schedules,
                 sportsScore = uiState.currentSportsScore,
-                streamMode = uiState.streamMode
+                streamMode = uiState.streamMode,
+                pipActive = uiState.pipEnabled
+            )
+        }
+
+        // PiP channel picker overlay
+        if (uiState.pipPickerVisible) {
+            PipChannelPicker(
+                channels = uiState.filteredChannels,
+                currentMain = uiState.currentChannel,
+                onPick = { viewModel.setPipChannel(it) },
+                onCancel = { viewModel.closePipPicker() }
+            )
+        }
+
+        // Game picker overlay
+        if (uiState.gamePickerVisible) {
+            GamePickerOverlay(
+                games = uiState.availableGames,
+                trackedKeys = uiState.trackedGameKeys,
+                channels = uiState.channels,
+                onToggle = { viewModel.toggleTrackGame(it) },
+                onWatch = { viewModel.watchGame(it) },
+                onClose = { viewModel.closeGamePicker() }
             )
         }
     }
@@ -1089,7 +1206,8 @@ private fun FullscreenActionOverlay(
     selectedIndex: Int,
     schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList(),
     sportsScore: GameScore? = null,
-    streamMode: com.airdvr.tv.data.stream.StreamMode = com.airdvr.tv.data.stream.StreamMode.TUNNEL
+    streamMode: com.airdvr.tv.data.stream.StreamMode = com.airdvr.tv.data.stream.StreamMode.TUNNEL,
+    pipActive: Boolean = false
 ) {
     if (channel == null) return
     Box(
@@ -1128,6 +1246,13 @@ private fun FullscreenActionOverlay(
                         )
                         OverlayActionBtn(Icons.Filled.Settings, "Quality", selectedIndex == 3)
                         OverlayActionBtn(Icons.Filled.ClosedCaption, if (ccEnabled) "CC On" else "CC Off", selectedIndex == 4)
+                        OverlayActionBtn(
+                            Icons.Filled.PictureInPictureAlt,
+                            if (pipActive) "PiP On" else "PiP",
+                            selectedIndex == 5,
+                            iconTint = if (pipActive) PlexAccent else null
+                        )
+                        OverlayActionBtn(Icons.Filled.SportsScore, "Scores", selectedIndex == 6)
                         Spacer(Modifier.weight(1f))
                         StreamModeBadge(streamMode)
                     }
@@ -1839,6 +1964,512 @@ private fun SportsArtwork(
             } else {
                 val abbrev = (channelName ?: "").take(3).uppercase()
                 Text(abbrev, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary)
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PICTURE-IN-PICTURE OVERLAY
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(UnstableApi::class, ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PipOverlay(
+    channel: Channel?,
+    focused: Boolean,
+    audioOnPip: Boolean,
+    player: ExoPlayer,
+    modifier: Modifier = Modifier
+) {
+    if (channel == null) return
+    Box(
+        modifier = modifier
+            .size(width = 320.dp, height = 180.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black)
+            .border(
+                if (focused) 3.dp else 2.dp,
+                if (focused) PlexAccent else Color.White.copy(alpha = 0.2f),
+                RoundedCornerShape(6.dp)
+            )
+    ) {
+        AndroidView(
+            factory = { ctx -> PlayerView(ctx).apply { useController = false; resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT } },
+            update = { it.player = player },
+            modifier = Modifier.fillMaxSize()
+        )
+        // Channel label bottom-left
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp)
+                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+        ) {
+            Text(
+                "${channel.guideNumber ?: ""} ${channel.guideName ?: ""}",
+                color = PlexTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
+            )
+        }
+        // Audio indicator top-right
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp)
+                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                .padding(4.dp)
+        ) {
+            Icon(
+                if (audioOnPip) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                contentDescription = if (audioOnPip) "Audio on PiP" else "Audio on Main",
+                tint = if (audioOnPip) PlexAccent else PlexTextTertiary,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PIP CHANNEL PICKER
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PipChannelPicker(
+    channels: List<Channel>,
+    currentMain: Channel?,
+    onPick: (Channel) -> Unit,
+    onCancel: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(560.dp)
+                .fillMaxHeight(0.75f)
+                .background(PlexCard, RoundedCornerShape(12.dp))
+                .border(1.dp, PlexBorder, RoundedCornerShape(12.dp))
+                .padding(20.dp)
+        ) {
+            Text(
+                "Pick a channel for PiP",
+                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Plays alongside the main video",
+                fontSize = 12.sp, color = PlexTextTertiary
+            )
+            Spacer(Modifier.height(12.dp))
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(channels) { _, ch ->
+                    val isMain = ch.guideNumber == currentMain?.guideNumber
+                    val logoInfo = ChannelLogoRepository.getLogoInfo(ch.guideName ?: "")
+                    Surface(
+                        onClick = { if (!isMain) onPick(ch) },
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                        colors = ClickableSurfaceDefaults.colors(
+                            containerColor = if (isMain) Color.Transparent else PlexSurface,
+                            focusedContainerColor = PlexAccent.copy(alpha = 0.25f)
+                        ),
+                        border = ClickableSurfaceDefaults.border(
+                            focusedBorder = androidx.tv.material3.Border(
+                                border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
+                            )
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                Modifier.size(28.dp).clip(CircleShape).background(PlexBg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = logoInfo!!.logoUrl,
+                                        contentDescription = ch.guideName,
+                                        modifier = Modifier.size(22.dp).clip(CircleShape),
+                                        contentScale = ContentScale.Fit
+                                    )
+                                } else {
+                                    Text(
+                                        (ch.guideName ?: "").take(2).uppercase(),
+                                        fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary
+                                    )
+                                }
+                            }
+                            Text(
+                                ch.guideNumber ?: "",
+                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                color = PlexTextPrimary, modifier = Modifier.width(48.dp)
+                            )
+                            Text(
+                                ch.guideName ?: "",
+                                fontSize = 13.sp,
+                                color = if (isMain) PlexTextTertiary else PlexTextSecondary,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isMain) {
+                                Text(
+                                    "On Main",
+                                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                    color = PlexTextTertiary,
+                                    modifier = Modifier
+                                        .background(PlexBg, RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GAME PICKER OVERLAY
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GamePickerOverlay(
+    games: List<GameScore>,
+    trackedKeys: Set<String>,
+    channels: List<Channel>,
+    onToggle: (GameScore) -> Unit,
+    onWatch: (GameScore) -> Unit,
+    onClose: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .clickable(onClick = onClose),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(680.dp)
+                .fillMaxHeight(0.8f)
+                .background(PlexCard, RoundedCornerShape(12.dp))
+                .border(1.dp, PlexBorder, RoundedCornerShape(12.dp))
+                .padding(20.dp)
+        ) {
+            Text(
+                "Track live games",
+                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Selected scores stay on screen as you change channels",
+                fontSize = 12.sp, color = PlexTextTertiary
+            )
+            Spacer(Modifier.height(12.dp))
+
+            if (games.isEmpty()) {
+                Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.SportsScore, "No games",
+                            tint = PlexTextTertiary, modifier = Modifier.size(40.dp)
+                        )
+                        Text("No live games right now", color = PlexTextSecondary, fontSize = 14.sp)
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    itemsIndexed(games) { _, game ->
+                        val key = gameKey(game)
+                        val isTracked = key in trackedKeys
+                        val inLineup = game.channel != null &&
+                            channels.any { it.guideNumber == game.channel }
+                        GamePickerRow(
+                            game = game,
+                            isTracked = isTracked,
+                            canWatch = inLineup,
+                            onToggle = { onToggle(game) },
+                            onWatch = { onWatch(game) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun GamePickerRow(
+    game: GameScore,
+    isTracked: Boolean,
+    canWatch: Boolean,
+    onToggle: () -> Unit,
+    onWatch: () -> Unit
+) {
+    val league = game.league?.lowercase() ?: ""
+    val awayLogo = TeamLogos.urlFor(league, game.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, game.homeTeam)
+    val awayAbbr = TeamLogos.abbrev(league, game.awayTeam)
+    val homeAbbr = TeamLogos.abbrev(league, game.homeTeam)
+    val live = isInProgress(game.status)
+    val isFinal = (game.status ?: "").lowercase().contains("final")
+    val statusText = when {
+        isFinal -> "FINAL"
+        live -> game.quarter?.takeIf { it.isNotBlank() } ?: "LIVE"
+        else -> game.status ?: ""
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .background(PlexSurface, RoundedCornerShape(6.dp))
+            .border(
+                if (isTracked) 2.dp else 0.dp,
+                if (isTracked) PlexAccent else Color.Transparent,
+                RoundedCornerShape(6.dp)
+            )
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // League badge
+        Text(
+            league.uppercase().ifBlank { "GAME" },
+            fontSize = 9.sp, fontWeight = FontWeight.Bold,
+            color = PlexTextTertiary,
+            modifier = Modifier
+                .background(PlexBg, RoundedCornerShape(3.dp))
+                .padding(horizontal = 5.dp, vertical = 2.dp)
+        )
+        // Away logo + abbrev
+        if (!awayLogo.isNullOrBlank()) {
+            AsyncImage(model = awayLogo, contentDescription = game.awayTeam,
+                modifier = Modifier.size(24.dp), contentScale = ContentScale.Fit)
+        }
+        Text(awayAbbr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary)
+        // Score
+        Text(
+            "${game.awayScore ?: "-"} – ${game.homeScore ?: "-"}",
+            fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+        )
+        Text(homeAbbr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary)
+        if (!homeLogo.isNullOrBlank()) {
+            AsyncImage(model = homeLogo, contentDescription = game.homeTeam,
+                modifier = Modifier.size(24.dp), contentScale = ContentScale.Fit)
+        }
+        // Status
+        if (statusText.isNotBlank()) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (live) Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRedDot))
+                Text(statusText, fontSize = 11.sp, color = if (live) LiveRedDot else PlexTextSecondary, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        // Watch button (only if channel in lineup)
+        if (canWatch) {
+            Surface(
+                onClick = onWatch,
+                shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+                colors = ClickableSurfaceDefaults.colors(
+                    containerColor = PlexBg,
+                    focusedContainerColor = PlexAccent
+                ),
+                border = ClickableSurfaceDefaults.border(
+                    focusedBorder = androidx.tv.material3.Border(
+                        border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
+                    )
+                ),
+                modifier = Modifier.height(28.dp)
+            ) {
+                Box(
+                    Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("WATCH", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary)
+                }
+            }
+        }
+        // Track toggle
+        Surface(
+            onClick = onToggle,
+            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = if (isTracked) PlexAccent.copy(alpha = 0.25f) else PlexBg,
+                focusedContainerColor = PlexAccent.copy(alpha = 0.4f)
+            ),
+            border = ClickableSurfaceDefaults.border(
+                focusedBorder = androidx.tv.material3.Border(
+                    border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
+                )
+            ),
+            modifier = Modifier.height(28.dp)
+        ) {
+            Box(
+                Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    if (isTracked) "TRACKING" else "TRACK",
+                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    color = if (isTracked) PlexAccent else PlexTextPrimary
+                )
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCOREBUG OVERLAY
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ScorebugOverlay(
+    games: List<GameScore>,
+    channels: List<Channel>,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        games.take(4).forEach { game ->
+            ScorebugRow(game = game, channels = channels)
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun ScorebugRow(
+    game: GameScore,
+    channels: List<Channel>
+) {
+    val league = game.league?.lowercase() ?: ""
+    val awayLogo = TeamLogos.urlFor(league, game.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, game.homeTeam)
+    val awayAbbr = TeamLogos.abbrev(league, game.awayTeam)
+    val homeAbbr = TeamLogos.abbrev(league, game.homeTeam)
+    val live = isInProgress(game.status)
+    val isFinal = (game.status ?: "").lowercase().contains("final")
+    val period = (game.quarter ?: "").lowercase()
+    val isFourthQuarter = period.contains("4") || period.contains("q4") ||
+        period.contains("4th") || period.contains("ot")
+    val homeS = game.homeScore ?: 0
+    val awayS = game.awayScore ?: 0
+    val isClose = !isFinal && live && isFourthQuarter && kotlin.math.abs(homeS - awayS) <= 5
+
+    // Pulse for close games
+    var pulse by remember(gameKey(game)) { mutableStateOf(false) }
+    if (isClose) {
+        LaunchedEffect(gameKey(game)) {
+            while (true) {
+                pulse = !pulse
+                delay(700)
+            }
+        }
+    }
+    val borderColor = when {
+        isClose && pulse -> Color(0xFFFFB020)
+        isClose -> Color(0xFFFFB020).copy(alpha = 0.3f)
+        live -> LiveRedDot.copy(alpha = 0.6f)
+        else -> PlexBorder
+    }
+
+    val statusText = when {
+        isFinal -> "FINAL"
+        live -> game.quarter?.takeIf { it.isNotBlank() } ?: "LIVE"
+        else -> game.status?.take(6) ?: ""
+    }
+
+    Box(
+        modifier = Modifier
+            .size(width = 280.dp, height = 48.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color.Black.copy(alpha = 0.85f))
+            .border(if (isClose) 2.dp else 1.dp, borderColor, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Away logo
+            if (!awayLogo.isNullOrBlank()) {
+                AsyncImage(
+                    model = awayLogo,
+                    contentDescription = game.awayTeam,
+                    modifier = Modifier.size(24.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Box(Modifier.size(24.dp))
+            }
+            Text(awayAbbr, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary, modifier = Modifier.width(32.dp))
+            // Score
+            Text(
+                "$awayS-$homeS",
+                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+            )
+            Text(homeAbbr, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                color = PlexTextPrimary, modifier = Modifier.width(32.dp))
+            // Home logo
+            if (!homeLogo.isNullOrBlank()) {
+                AsyncImage(
+                    model = homeLogo,
+                    contentDescription = game.homeTeam,
+                    modifier = Modifier.size(24.dp),
+                    contentScale = ContentScale.Fit
+                )
+            } else {
+                Box(Modifier.size(24.dp))
+            }
+            Spacer(Modifier.weight(1f))
+            // Period / status
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    statusText.uppercase(),
+                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                    color = when {
+                        isFinal -> PlexTextSecondary
+                        isClose -> Color(0xFFFFB020)
+                        live -> LiveRedDot
+                        else -> PlexTextSecondary
+                    }
+                )
+                if (live && !game.timeRemaining.isNullOrBlank()) {
+                    Text(
+                        game.timeRemaining,
+                        fontSize = 9.sp, color = PlexTextTertiary
+                    )
+                }
             }
         }
     }

@@ -103,7 +103,20 @@ data class LiveTVUiState(
     val currentSportsScore: GameScore? = null,
 
     // Three-tier stream mode (LOCAL / REMOTE / TUNNEL)
-    val streamMode: StreamMode = StreamMode.TUNNEL
+    val streamMode: StreamMode = StreamMode.TUNNEL,
+
+    // ── Picture-in-Picture multiview ──
+    val pipChannel: Channel? = null,
+    val pipStreamUrl: String? = null,
+    val pipFocused: Boolean = false,
+    val audioOnPip: Boolean = false,
+    val pipPickerVisible: Boolean = false,
+
+    // ── Scorebug overlay ──
+    val gamePickerVisible: Boolean = false,
+    val availableGames: List<GameScore> = emptyList(),  // populated when picker opens
+    val trackedGameKeys: Set<String> = emptySet(),
+    val scorebugGames: List<GameScore> = emptyList()
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -148,8 +161,14 @@ data class LiveTVUiState(
 
     val isMultiView: Boolean get() = multiViewPanes.size >= 2
 
+    val pipEnabled: Boolean get() = pipChannel != null && !pipStreamUrl.isNullOrBlank()
+
     val visibleDurationSec: Long get() = 3L * 3600L // 3 hours
 }
+
+/** Stable identity for a game across polls. */
+internal fun gameKey(g: GameScore): String =
+    "${g.league ?: ""}|${g.awayTeam ?: ""}|${g.homeTeam ?: ""}|${g.startTime ?: ""}"
 
 class LiveTVViewModel : ViewModel() {
 
@@ -607,7 +626,7 @@ class LiveTVViewModel : ViewModel() {
 
     fun overlayNavigateRight() {
         val s = _uiState.value
-        if (s.actionButtonIndex < 4) {
+        if (s.actionButtonIndex < 6) {
             _uiState.value = s.copy(actionButtonIndex = s.actionButtonIndex + 1)
         }
         resetOverlayTimer()
@@ -632,6 +651,16 @@ class LiveTVViewModel : ViewModel() {
             2 -> toggleMute()
             3 -> cycleQuality()
             4 -> toggleCC()
+            5 -> {
+                // Picture-in-Picture
+                hideFullscreenOverlay()
+                openPipPicker()
+            }
+            6 -> {
+                // Scores picker
+                hideFullscreenOverlay()
+                openGamePicker()
+            }
         }
     }
 
@@ -951,4 +980,195 @@ class LiveTVViewModel : ViewModel() {
         toastJob?.cancel()
         _uiState.value = _uiState.value.copy(toastMessage = null)
     }
+
+    // ── Picture-in-Picture ──────────────────────────────────────────────────
+
+    fun openPipPicker() {
+        val s = _uiState.value
+        if (s.tunerCount < 2) {
+            showToast("PiP requires 2+ tuners")
+            return
+        }
+        _uiState.value = s.copy(pipPickerVisible = true, focusedRow = 0)
+    }
+
+    fun closePipPicker() {
+        _uiState.value = _uiState.value.copy(pipPickerVisible = false)
+    }
+
+    /** Tune the PiP window to the given channel (independent of the main tuner). */
+    fun setPipChannel(channel: Channel) {
+        if (channel.guideNumber.isNullOrBlank()) return
+        // Don't put the same channel as the main player into PiP — wastes a tuner.
+        if (channel.guideNumber == _uiState.value.currentChannel?.guideNumber) {
+            showToast("Already watching this channel")
+            return
+        }
+        val quality = guidePrefsManager.quality.value
+        val url = streamRepo.getStreamUrl(channel.guideNumber, quality)
+        _uiState.value = _uiState.value.copy(
+            pipChannel = channel,
+            pipStreamUrl = url,
+            pipPickerVisible = false
+        )
+    }
+
+    fun closePip() {
+        _uiState.value = _uiState.value.copy(
+            pipChannel = null,
+            pipStreamUrl = null,
+            pipFocused = false,
+            audioOnPip = false
+        )
+    }
+
+    fun focusPip() {
+        if (_uiState.value.pipEnabled) {
+            _uiState.value = _uiState.value.copy(pipFocused = true)
+        }
+    }
+
+    fun unfocusPip() {
+        _uiState.value = _uiState.value.copy(pipFocused = false)
+    }
+
+    /** Swap the main player and PiP — main becomes PiP, PiP becomes main. */
+    fun swapPipAndMain() {
+        val s = _uiState.value
+        val pipCh = s.pipChannel ?: return
+        val pipUrl = s.pipStreamUrl ?: return
+        val mainCh = s.currentChannel ?: return
+        val mainUrl = s.streamUrl ?: return
+        _uiState.value = s.copy(
+            currentChannel = pipCh,
+            streamUrl = pipUrl,
+            pipChannel = mainCh,
+            pipStreamUrl = mainUrl,
+            isTuning = true,
+            pipFocused = false
+        )
+    }
+
+    fun pipChannelUp() {
+        val s = _uiState.value
+        val list = s.filteredChannels
+        val current = s.pipChannel ?: return
+        val idx = list.indexOf(current)
+        val next = list.getOrNull(idx + 1) ?: return
+        if (next.guideNumber == s.currentChannel?.guideNumber) {
+            // Skip past the main channel
+            val skip = list.getOrNull(idx + 2) ?: return
+            setPipChannel(skip)
+        } else {
+            setPipChannel(next)
+        }
+    }
+
+    fun pipChannelDown() {
+        val s = _uiState.value
+        val list = s.filteredChannels
+        val current = s.pipChannel ?: return
+        val idx = list.indexOf(current)
+        val prev = list.getOrNull(idx - 1) ?: return
+        if (prev.guideNumber == s.currentChannel?.guideNumber) {
+            val skip = list.getOrNull(idx - 2) ?: return
+            setPipChannel(skip)
+        } else {
+            setPipChannel(prev)
+        }
+    }
+
+    fun togglePipAudio() {
+        _uiState.value = _uiState.value.copy(audioOnPip = !_uiState.value.audioOnPip)
+    }
+
+    // ── Scorebug overlay ────────────────────────────────────────────────────
+
+    private var scorebugPollJob: Job? = null
+
+    fun openGamePicker() {
+        viewModelScope.launch {
+            val games = fetchAllGames()
+            _uiState.value = _uiState.value.copy(
+                gamePickerVisible = true,
+                availableGames = games
+            )
+        }
+    }
+
+    fun closeGamePicker() {
+        _uiState.value = _uiState.value.copy(gamePickerVisible = false)
+    }
+
+    fun toggleTrackGame(game: GameScore) {
+        val key = gameKey(game)
+        val s = _uiState.value
+        val newKeys = if (s.trackedGameKeys.contains(key)) {
+            s.trackedGameKeys - key
+        } else {
+            s.trackedGameKeys + key
+        }
+        // Recompute which games are currently being shown
+        val newScorebugs = s.availableGames.filter { gameKey(it) in newKeys }
+            .ifEmpty { s.scorebugGames.filter { gameKey(it) in newKeys } }
+        _uiState.value = s.copy(
+            trackedGameKeys = newKeys,
+            scorebugGames = newScorebugs
+        )
+        if (newKeys.isEmpty()) stopScorebugPolling()
+        else startScorebugPollingIfNeeded()
+    }
+
+    /** Find a channel matching the game's broadcast channel and tune the main player to it. */
+    fun watchGame(game: GameScore) {
+        val target = game.channel ?: return
+        val match = _uiState.value.channels.firstOrNull { it.guideNumber == target }
+        if (match != null) {
+            tuneToChannel(match)
+            closeGamePicker()
+        } else {
+            showToast("Channel ${target} not in lineup")
+        }
+    }
+
+    private fun startScorebugPollingIfNeeded() {
+        if (scorebugPollJob?.isActive == true) return
+        scorebugPollJob = viewModelScope.launch {
+            while (true) {
+                refreshScorebugs()
+                delay(30_000)
+            }
+        }
+    }
+
+    private fun stopScorebugPolling() {
+        scorebugPollJob?.cancel()
+        scorebugPollJob = null
+    }
+
+    private suspend fun refreshScorebugs() {
+        val keys = _uiState.value.trackedGameKeys
+        if (keys.isEmpty()) return
+        val games = fetchAllGames()
+        val matched = games.filter { gameKey(it) in keys }
+        _uiState.value = _uiState.value.copy(scorebugGames = matched)
+    }
+
+    private suspend fun fetchAllGames(): List<GameScore> {
+        return try {
+            val resp = api.getSportsScoresToday()
+            if (!resp.isSuccessful) return emptyList()
+            val body = resp.body() ?: return emptyList()
+            (body.nba.map { it.withLeague("nba") } +
+             body.nfl.map { it.withLeague("nfl") } +
+             body.mlb.map { it.withLeague("mlb") } +
+             body.nhl.map { it.withLeague("nhl") })
+        } catch (e: Exception) {
+            Log.d("SCORES", "fetch all games failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun GameScore.withLeague(default: String): GameScore =
+        if (!league.isNullOrBlank()) this else copy(league = default)
 }

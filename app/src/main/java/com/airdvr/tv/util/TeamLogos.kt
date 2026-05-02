@@ -85,6 +85,22 @@ object TeamLogos {
         else -> null
     }
 
+    /** ESPN 3-letter abbreviation for a team, uppercased. */
+    fun abbrev(league: String, teamName: String?): String {
+        if (teamName.isNullOrBlank()) return ""
+        val key = teamName.trim().lowercase()
+        val table = when (league) {
+            "nfl" -> nfl
+            "nba" -> nba
+            "mlb" -> mlb
+            "nhl" -> nhl
+            else -> return shortName(teamName).take(3).uppercase()
+        }
+        val match = table[key]
+            ?: table.entries.firstOrNull { key.contains(it.key) || it.key.contains(key) }?.value
+        return match?.uppercase() ?: shortName(teamName).take(3).uppercase()
+    }
+
     /**
      * Strip the city prefix from a full team name to get the nickname
      * ("Detroit Pistons" → "Pistons", "New York Knicks" → "Knicks").
