@@ -1,7 +1,5 @@
 package com.airdvr.tv.ui.screens
 
-import android.view.KeyEvent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,12 +8,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -25,10 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,54 +34,39 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.*
 import coil.compose.AsyncImage
+import com.airdvr.tv.data.models.EspnArticle
+import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.DaySection
+import com.airdvr.tv.ui.viewmodels.HUB_LEAGUES
 import com.airdvr.tv.ui.viewmodels.SportsCalendarViewModel
 import com.airdvr.tv.ui.viewmodels.SportsEvent
 import com.airdvr.tv.util.TeamLogos
+import com.airdvr.tv.util.formatGameTimeLocal
+import com.airdvr.tv.util.parseIsoToEpochSec
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-// ── League configuration ────────────────────────────────────────────────
+// ── League gradients (per spec) ─────────────────────────────────────────
 
-private data class LeagueOption(val id: String, val label: String)
+private fun leagueGradient(league: String, dim: Boolean = false): Brush {
+    val (start, end) = when (league.lowercase()) {
+        "nba" -> Color(0xFF17408B) to Color(0xFFC9082A)
+        "nfl" -> Color(0xFF013369) to Color(0xFF003F7F)
+        "mlb" -> Color(0xFF002D72) to Color(0xFFCC0000)
+        "nhl" -> Color(0xFF99C5E0) to Color(0xFF003366)
+        else -> Color(0xFF1A1A1A) to Color(0xFF050505)
+    }
+    return if (dim) {
+        Brush.linearGradient(listOf(start.copy(alpha = 0.6f), end.copy(alpha = 0.6f)))
+    } else {
+        Brush.linearGradient(listOf(start, end))
+    }
+}
 
-private val leagueOptions = listOf(
-    LeagueOption("all", "All"),
-    LeagueOption("nfl", "NFL"),
-    LeagueOption("nba", "NBA"),
-    LeagueOption("mlb", "MLB"),
-    LeagueOption("nhl", "NHL"),
-    LeagueOption("ncaa", "NCAA"),
-    LeagueOption("soccer", "Soccer"),
-    LeagueOption("golf", "Golf"),
-    LeagueOption("tennis", "Tennis"),
-    LeagueOption("ufc", "UFC"),
-    LeagueOption("sport", "Other"),
-)
-
-private val leagueColors = mapOf(
-    "nfl" to Color(0xFF013369),
-    "nba" to Color(0xFFC9082A),
-    "mlb" to Color(0xFF002D72),
-    "nhl" to Color(0xFF000000),
-    "ncaa" to Color(0xFF004B8D),
-    "soccer" to Color(0xFF00A651),
-    "golf" to Color(0xFF00533E),
-    "ufc" to Color(0xFFD20A0A),
-    "nascar" to Color(0xFFFFB300),
-    "tennis" to Color(0xFF1A6EBD),
-    "wwe" to Color(0xFF6B0F1A),
-    "sport" to Color(0xFF3B82F6),
-)
-
-// Team logo lookup is shared across screens — see com.airdvr.tv.util.TeamLogos.
-
-private fun teamLogoUrl(league: String, teamName: String?): String? =
-    TeamLogos.urlFor(league, teamName)
-
-// ── Screen ──────────────────────────────────────────────────────────────
+// ── Sports Hub Screen ────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -96,13 +76,13 @@ fun SportsCalendarScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var recordTarget by remember { mutableStateOf<SportsEvent?>(null) }
-    var optionsTarget by remember { mutableStateOf<SportsEvent?>(null) }
+    var newsExpanded by remember { mutableStateOf<EspnArticle?>(null) }
 
     Box(modifier = Modifier.fillMaxSize().background(PlexBg)) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Top bar
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -120,7 +100,10 @@ fun SportsCalendarScreen(
                         modifier = Modifier.padding(8.dp)
                     )
                 }
-                Text("Sports Calendar", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary)
+                Text(
+                    "Sports Hub",
+                    fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                )
             }
 
             if (uiState.isLoading) {
@@ -130,10 +113,9 @@ fun SportsCalendarScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(bottom = 32.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp, top = 4.dp)
                 ) {
-                    // 1. League filter row
                     item("league_filter") {
                         LeagueFilterRow(
                             selected = uiState.selectedLeague,
@@ -141,56 +123,75 @@ fun SportsCalendarScreen(
                         )
                     }
 
-                    // 2. Today's games (only show if there are games or no filter results)
-                    if (uiState.todaysGames.isNotEmpty()) {
-                        item("today_header") {
-                            SectionHeader("Today's Games")
-                        }
-                        item("today_row") {
-                            LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 24.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(uiState.todaysGames, key = { ev -> "today-${ev.program.programId ?: ev.title}-${ev.startEpochSec}" }) { event ->
-                                    GameCard(
-                                        event = event,
-                                        wide = true,
-                                        onClick = { recordTarget = event },
-                                        onLongPress = { optionsTarget = event }
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 3. Day-by-day sections
-                    uiState.upcomingByDay.forEach { day ->
-                        item("day_${day.key}") {
-                            DaySectionRow(
-                                day = day,
-                                isExpanded = uiState.expandedDayKeys.contains(day.key),
-                                onToggle = { viewModel.toggleDayExpanded(day.key) },
-                                onEventClick = { recordTarget = it },
-                                onEventLongPress = { optionsTarget = it }
+                    if (uiState.liveGames.isNotEmpty()) {
+                        item("live_header") { SectionHeader("LIVE NOW", accent = LiveRedDot) }
+                        items(
+                            uiState.liveGames,
+                            key = { ev -> "live-${ev.program.programId ?: ev.title}-${ev.startEpochSec}" }
+                        ) { event ->
+                            LiveGameCard(
+                                event = event,
+                                onClick = { recordTarget = event }
                             )
                         }
                     }
 
-                    // Empty state
-                    if (uiState.todaysGames.isEmpty() && uiState.upcomingByDay.isEmpty()) {
+                    if (uiState.todayResults.isNotEmpty()) {
+                        item("today_header") { SectionHeader("TODAY") }
+                        items(
+                            uiState.todayResults,
+                            key = { ev -> "today-${ev.program.programId ?: ev.title}-${ev.startEpochSec}" }
+                        ) { event ->
+                            TodayGameCard(
+                                event = event,
+                                onClick = { recordTarget = event }
+                            )
+                        }
+                    }
+
+                    if (uiState.upcomingByDay.isNotEmpty()) {
+                        item("upcoming_header") { SectionHeader("UPCOMING") }
+                        uiState.upcomingByDay.forEach { day ->
+                            item("up_day_${day.key}") {
+                                Text(
+                                    day.label,
+                                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                                    color = PlexTextSecondary, letterSpacing = 0.5.sp,
+                                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+                                )
+                            }
+                            items(
+                                day.events,
+                                key = { ev -> "up-${day.key}-${ev.program.programId ?: ev.title}-${ev.startEpochSec}" }
+                            ) { event ->
+                                UpcomingGameRow(
+                                    event = event,
+                                    onClick = { recordTarget = event }
+                                )
+                            }
+                        }
+                    }
+
+                    if (uiState.news.isNotEmpty()) {
+                        item("news_header") { SectionHeader("SPORTS NEWS") }
+                        item("news_row") {
+                            NewsRow(
+                                articles = uiState.news,
+                                onSelect = { newsExpanded = it }
+                            )
+                        }
+                    }
+
+                    if (uiState.liveGames.isEmpty() && uiState.todayResults.isEmpty() &&
+                        uiState.upcomingByDay.isEmpty() && uiState.news.isEmpty()) {
                         item("empty") {
                             Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 80.dp),
+                                modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    "No upcoming sports on your channels",
-                                    color = PlexTextTertiary,
-                                    fontSize = 16.sp,
-                                    textAlign = TextAlign.Center
+                                    "No games on your channels",
+                                    color = PlexTextTertiary, fontSize = 16.sp
                                 )
                             }
                         }
@@ -199,7 +200,6 @@ fun SportsCalendarScreen(
             }
         }
 
-        // Toast
         uiState.toastMessage?.let { msg ->
             Box(
                 modifier = Modifier
@@ -213,90 +213,38 @@ fun SportsCalendarScreen(
         }
     }
 
-    // Record dialog (single click — Record Once)
     if (recordTarget != null) {
         val ev = recordTarget!!
         RecordEventDialog(
             event = ev,
             isAlreadyScheduled = viewModel.isScheduled(ev),
             onDismiss = { recordTarget = null },
-            onRecordOnce = {
-                viewModel.recordEvent(ev, "once")
-                recordTarget = null
-            },
-            onRecordSeries = {
-                viewModel.recordEvent(ev, "series")
-                recordTarget = null
-            }
+            onRecordOnce = { viewModel.recordEvent(ev, "once"); recordTarget = null },
+            onRecordSeries = { viewModel.recordEvent(ev, "series"); recordTarget = null }
         )
     }
 
-    // Long-press options
-    if (optionsTarget != null) {
-        val ev = optionsTarget!!
-        AlertDialog(
-            onDismissRequest = { optionsTarget = null },
-            containerColor = PlexCard,
-            title = {
-                androidx.compose.material3.Text(
-                    ev.title,
-                    color = PlexTextPrimary, fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    if (!ev.networkLabel.isNullOrBlank() || !ev.channelNumber.isNullOrBlank()) {
-                        androidx.compose.material3.Text(
-                            "Ch ${ev.channelNumber ?: ""} ${ev.networkLabel ?: ""}".trim(),
-                            color = PlexTextSecondary, fontSize = 13.sp
-                        )
-                    }
-                    androidx.compose.material3.Text(
-                        formatStartTime(ev.startEpochSec),
-                        color = PlexTextSecondary, fontSize = 13.sp
-                    )
-                }
-            },
-            confirmButton = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    TextButton(onClick = {
-                        viewModel.recordEvent(ev, "once")
-                        optionsTarget = null
-                    }) {
-                        androidx.compose.material3.Text("Record Once", color = Color(0xFFEF4444))
-                    }
-                    TextButton(onClick = {
-                        viewModel.recordEvent(ev, "series")
-                        optionsTarget = null
-                    }) {
-                        androidx.compose.material3.Text("Record Series", color = Color(0xFFEF4444))
-                    }
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { optionsTarget = null }) {
-                    androidx.compose.material3.Text("Cancel", color = PlexTextSecondary)
-                }
-            }
-        )
+    if (newsExpanded != null) {
+        val article = newsExpanded!!
+        NewsArticleDialog(article = article, onDismiss = { newsExpanded = null })
     }
 }
 
-// ── League filter row ───────────────────────────────────────────────────
+// ── League filter ────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun LeagueFilterRow(selected: String, onSelect: (String) -> Unit) {
     LazyRow(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth(),
         contentPadding = PaddingValues(horizontal = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        items(leagueOptions, key = { it.id }) { opt ->
+        items(HUB_LEAGUES, key = { it.first }) { (id, label) ->
             LeagueChip(
-                label = opt.label,
-                isSelected = selected == opt.id,
-                onClick = { onSelect(opt.id) }
+                label = label,
+                isSelected = selected == id,
+                onClick = { onSelect(id) }
             )
         }
     }
@@ -321,13 +269,13 @@ private fun LeagueChip(label: String, isSelected: Boolean, onClick: () -> Unit) 
         modifier = Modifier.height(36.dp)
     ) {
         Box(
-            modifier = Modifier.padding(horizontal = 18.dp).fillMaxHeight(),
+            modifier = Modifier.padding(horizontal = 22.dp).fillMaxHeight(),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 label,
                 fontSize = 13.sp,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                 color = if (isSelected) Color.White else PlexTextSecondary
             )
         }
@@ -338,229 +286,134 @@ private fun LeagueChip(label: String, isSelected: Boolean, onClick: () -> Unit) 
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        title,
-        fontSize = 18.sp, fontWeight = FontWeight.Bold,
-        color = PlexTextPrimary,
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-    )
-}
-
-// ── Day section ─────────────────────────────────────────────────────────
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-private fun DaySectionRow(
-    day: DaySection,
-    isExpanded: Boolean,
-    onToggle: () -> Unit,
-    onEventClick: (SportsEvent) -> Unit,
-    onEventLongPress: (SportsEvent) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Header (focusable, click to expand/collapse)
-        Surface(
-            onClick = onToggle,
-            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
-            colors = ClickableSurfaceDefaults.colors(
-                containerColor = Color.Transparent,
-                focusedContainerColor = PlexCard
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (isExpanded) "Collapse" else "Expand",
-                    tint = PlexTextSecondary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    day.label,
-                    fontSize = 16.sp, fontWeight = FontWeight.SemiBold,
-                    color = PlexTextPrimary
-                )
-                Text(
-                    "${day.events.size} game${if (day.events.size == 1) "" else "s"}",
-                    fontSize = 12.sp, color = PlexTextTertiary
-                )
-            }
+private fun SectionHeader(title: String, accent: Color? = null) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (accent != null) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
         }
-
-        AnimatedVisibility(visible = isExpanded) {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 4.dp),
-                contentPadding = PaddingValues(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(day.events, key = { ev -> "${day.key}-${ev.program.programId ?: ev.title}-${ev.startEpochSec}" }) { event ->
-                    GameCard(
-                        event = event,
-                        wide = false,
-                        onClick = { onEventClick(event) },
-                        onLongPress = { onEventLongPress(event) }
-                    )
-                }
-            }
-        }
+        Text(
+            title,
+            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+            color = PlexTextPrimary, letterSpacing = 1.sp
+        )
     }
 }
 
-// ── Game card ───────────────────────────────────────────────────────────
+// ── LIVE NOW card ───────────────────────────────────────────────────────
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun GameCard(
-    event: SportsEvent,
-    wide: Boolean,
-    onClick: () -> Unit,
-    onLongPress: () -> Unit
-) {
-    val cardWidth = if (wide) 280.dp else 240.dp
-    val cardHeight = if (wide) 160.dp else 150.dp
-    var focused by remember { mutableStateOf(false) }
-    val leagueColor = leagueColors[event.league] ?: PlexAccent
+private fun LiveGameCard(event: SportsEvent, onClick: () -> Unit) {
+    val score = event.score
+    val league = event.league
+    val awayTeam = score?.awayTeam ?: event.awayTeam
+    val homeTeam = score?.homeTeam ?: event.homeTeam
+    val awayLogo = TeamLogos.urlFor(league, awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, homeTeam)
+    val awayAbbr = TeamLogos.abbrev(league, awayTeam).ifBlank { (awayTeam ?: "AWAY").take(3).uppercase() }
+    val homeAbbr = TeamLogos.abbrev(league, homeTeam).ifBlank { (homeTeam ?: "HOME").take(3).uppercase() }
 
-    Card(
+    Surface(
         onClick = onClick,
         modifier = Modifier
-            .width(cardWidth)
-            .height(cardHeight)
-            .onFocusChanged { focused = it.isFocused }
-            .onKeyEvent { keyEvent ->
-                if (keyEvent.type == KeyEventType.KeyDown &&
-                    keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU
-                ) {
-                    onLongPress(); true
-                } else false
-            },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
-        colors = CardDefaults.colors(
-            containerColor = PlexCard,
-            focusedContainerColor = PlexCard
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .focusable(),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent
         ),
-        border = CardDefaults.border(
+        border = ClickableSurfaceDefaults.border(
             border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
             focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
         )
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // League badge — top-left
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .background(leagueColor, RoundedCornerShape(0.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    leagueLabel(event.league),
-                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    color = Color.White, letterSpacing = 0.4.sp
-                )
-            }
+        Column(modifier = Modifier.fillMaxWidth().background(leagueGradient(league))) {
+            Box(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                // LIVE pulsing badge top-right
+                LiveBadge(modifier = Modifier.align(Alignment.TopEnd))
 
-            // Live badge — top-right
-            if (event.isLive) {
-                LiveBadge(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
-            }
-
-            // Center: matchup
-            Column(
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                // Prefer SportsDataIO-supplied team names when we have a matched live game.
-                val sdAway = event.score?.awayTeam?.takeIf { it.isNotBlank() }
-                val sdHome = event.score?.homeTeam?.takeIf { it.isNotBlank() }
-                val displayAway = sdAway ?: event.awayTeam
-                val displayHome = sdHome ?: event.homeTeam
-                if (displayAway != null && displayHome != null) {
-                    MatchupRow(
-                        league = event.league,
-                        away = displayAway,
-                        home = displayHome,
-                        wide = wide
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    TeamCell(
+                        logoUrl = awayLogo,
+                        abbreviation = awayAbbr,
+                        score = score?.awayScore,
+                        align = Alignment.Start
                     )
-                    val score = event.score
-                    if (score != null && score.homeScore != null && score.awayScore != null) {
-                        Text(
-                            "${score.awayScore} - ${score.homeScore}",
-                            fontSize = if (wide) 18.sp else 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = PlexTextPrimary
-                        )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        if (score?.awayScore != null && score.homeScore != null) {
+                            Text(
+                                "${score.awayScore} - ${score.homeScore}",
+                                fontSize = 32.sp, fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        } else {
+                            Text(
+                                "vs",
+                                fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                        val statusLine = liveStatusLine(score)
+                        if (statusLine.isNotBlank()) {
+                            Text(
+                                statusLine,
+                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.9f)
+                            )
+                        }
                     }
-                } else {
-                    Text(
-                        event.title,
-                        fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
-                        color = PlexTextPrimary,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3, overflow = TextOverflow.Ellipsis
+                    TeamCell(
+                        logoUrl = homeLogo,
+                        abbreviation = homeAbbr,
+                        score = score?.homeScore,
+                        align = Alignment.End
                     )
                 }
             }
 
-            // Bottom-left: channel + network
-            val chLabel = formatChannelLabel(event)
-            if (chLabel.isNotBlank()) {
-                Text(
-                    chLabel,
-                    fontSize = 11.sp, color = PlexTextSecondary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(8.dp)
+            // Win-probability bar (only when InProgress + data available)
+            if (score?.homeWinProbability != null && score.awayWinProbability != null) {
+                WinProbabilityBar(
+                    awayAbbr = awayAbbr,
+                    homeAbbr = homeAbbr,
+                    awayProb = score.awayWinProbability,
+                    homeProb = score.homeWinProbability,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
 
-            // Bottom-right: start time, or quarter/clock for in-progress games.
-            val score = event.score
-            val rightLabel = when {
-                event.isLive && score != null -> {
-                    val q = score.quarter?.takeIf { it.isNotBlank() }
-                    val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
-                    when {
-                        q != null && tr != null -> "$q · $tr"
-                        q != null -> q
-                        tr != null -> tr
-                        else -> null
-                    }
-                }
-                !event.isLive -> formatStartTime(event.startEpochSec)
-                else -> null
-            }
-            if (rightLabel != null) {
-                Text(
-                    rightLabel,
-                    fontSize = 11.sp, color = PlexTextSecondary,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
-                )
-            }
-
-            // Focus overlay — "Record" hint
-            if (focused) {
-                Box(
+            // Watch-now strip
+            val chNum = event.channelNumber
+            val network = event.networkLabel
+            if (!chNum.isNullOrBlank()) {
+                Row(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 26.dp)
-                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(0.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        "Press OK to Record",
-                        fontSize = 10.sp, color = Color.White,
-                        fontWeight = FontWeight.SemiBold
+                        "● WATCH",
+                        fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LiveRedDot
+                    )
+                    Text(
+                        "Ch $chNum${if (!network.isNullOrBlank()) " · $network" else ""}",
+                        fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -569,61 +422,88 @@ private fun GameCard(
 }
 
 @Composable
-private fun MatchupRow(league: String, away: String, home: String, wide: Boolean) {
-    val logoSize = if (wide) 44.dp else 38.dp
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (wide) 14.dp else 10.dp)
-    ) {
-        TeamLogoOrName(league = league, team = away, logoSize = logoSize)
-        Text(
-            "vs",
-            fontSize = 12.sp, fontWeight = FontWeight.Medium,
-            color = PlexTextTertiary
-        )
-        TeamLogoOrName(league = league, team = home, logoSize = logoSize)
-    }
-}
-
-@Composable
-private fun TeamLogoOrName(league: String, team: String, logoSize: androidx.compose.ui.unit.Dp) {
-    val url = teamLogoUrl(league, team)
-    var imageFailed by remember(url) { mutableStateOf(false) }
+private fun TeamCell(
+    logoUrl: String?,
+    abbreviation: String,
+    score: Int?,
+    align: Alignment.Horizontal
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-        modifier = Modifier.width(logoSize + 16.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.width(96.dp)
     ) {
-        if (url != null && !imageFailed) {
+        if (!logoUrl.isNullOrBlank()) {
             AsyncImage(
-                model = url,
-                contentDescription = team,
-                modifier = Modifier.size(logoSize),
-                contentScale = ContentScale.Fit,
-                onError = { imageFailed = true }
+                model = logoUrl,
+                contentDescription = abbreviation,
+                modifier = Modifier.size(48.dp),
+                contentScale = ContentScale.Fit
             )
         } else {
             Box(
-                modifier = Modifier
-                    .size(logoSize)
-                    .clip(CircleShape)
-                    .background(PlexSurface)
-                    .border(1.dp, PlexBorder, CircleShape),
+                modifier = Modifier.size(48.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    abbreviateTeamName(team),
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold,
-                    color = PlexTextPrimary
+                    abbreviation, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White
                 )
             }
         }
         Text(
-            team,
-            fontSize = 9.sp, color = PlexTextSecondary,
-            textAlign = TextAlign.Center,
-            maxLines = 1, overflow = TextOverflow.Ellipsis
+            abbreviation,
+            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White
         )
+    }
+}
+
+@Composable
+private fun WinProbabilityBar(
+    awayAbbr: String,
+    homeAbbr: String,
+    awayProb: Float,
+    homeProb: Float,
+    modifier: Modifier = Modifier
+) {
+    val a = awayProb.coerceIn(0f, 1f)
+    val h = homeProb.coerceIn(0f, 1f)
+    val total = (a + h).takeIf { it > 0f } ?: return
+    val aPct = a / total
+    val hPct = h / total
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "$awayAbbr ${(aPct * 100).toInt()}%",
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White
+            )
+            Text(
+                "${(hPct * 100).toInt()}% $homeAbbr",
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color.Black.copy(alpha = 0.4f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(aPct.coerceAtLeast(0.001f))
+                    .fillMaxHeight()
+                    .background(Color(0xFFE63946))
+            )
+            Box(
+                modifier = Modifier
+                    .weight(hPct.coerceAtLeast(0.001f))
+                    .fillMaxHeight()
+                    .background(Color.White)
+            )
+        }
     }
 }
 
@@ -639,20 +519,355 @@ private fun LiveBadge(modifier: Modifier = Modifier) {
     )
     Row(
         modifier = modifier
-            .background(Color(0xFFEF4444), RoundedCornerShape(0.dp))
+            .background(LiveRedDot, RoundedCornerShape(0.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Box(
-            Modifier.size(6.dp).clip(CircleShape).background(Color.White.copy(alpha = pulse))
-        )
+        Box(Modifier.size(6.dp).clip(CircleShape).background(Color.White.copy(alpha = pulse)))
         Text(
             "LIVE",
-            fontSize = 10.sp, fontWeight = FontWeight.Bold,
-            color = Color.White, letterSpacing = 0.5.sp
+            fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 0.5.sp
         )
     }
+}
+
+private fun liveStatusLine(score: GameScore?): String {
+    if (score == null) return ""
+    val q = score.quarter?.takeIf { it.isNotBlank() }
+    val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
+    return when {
+        q != null && tr != null -> "$q $tr"
+        q != null -> q
+        tr != null -> tr
+        else -> ""
+    }
+}
+
+// ── TODAY card (scheduled or final result) ──────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun TodayGameCard(event: SportsEvent, onClick: () -> Unit) {
+    val score = event.score
+    val league = event.league
+    val awayTeam = score?.awayTeam ?: event.awayTeam
+    val homeTeam = score?.homeTeam ?: event.homeTeam
+    val awayLogo = TeamLogos.urlFor(league, awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, homeTeam)
+    val awayAbbr = TeamLogos.abbrev(league, awayTeam).ifBlank { (awayTeam ?: "AWAY").take(3).uppercase() }
+    val homeAbbr = TeamLogos.abbrev(league, homeTeam).ifBlank { (homeTeam ?: "HOME").take(3).uppercase() }
+    val isFinal = event.isFinal
+    val homePts = score?.homeScore
+    val awayPts = score?.awayScore
+    val awayWon = isFinal && homePts != null && awayPts != null && awayPts > homePts
+    val homeWon = isFinal && homePts != null && awayPts != null && homePts > awayPts
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .focusable(),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(leagueGradient(league, dim = true))
+                .padding(14.dp)
+        ) {
+            // Status badge top-right
+            if (isFinal) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(0.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text("FINAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = 0.5.sp)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TeamCellWithName(
+                    logoUrl = awayLogo,
+                    fullName = awayTeam,
+                    abbreviation = awayAbbr,
+                    dim = isFinal && !awayWon
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    if (isFinal && awayPts != null && homePts != null) {
+                        Text(
+                            "$awayPts - $homePts",
+                            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White
+                        )
+                    } else {
+                        val timeStr = formatGameTimeLocal(event.program.startTime).ifBlank {
+                            formatStartTime(event.startEpochSec)
+                        }
+                        Text(
+                            timeStr,
+                            fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White
+                        )
+                        val ch = event.channelNumber
+                        val net = event.networkLabel
+                        val chLabel = listOfNotNull(net, ch?.let { "Ch $it" }).joinToString(" · ")
+                        if (chLabel.isNotBlank()) {
+                            Text(
+                                chLabel,
+                                fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f)
+                            )
+                        }
+                    }
+                    score?.seriesInfo?.let { s ->
+                        val hw = s.homeWins ?: 0
+                        val aw = s.awayWins ?: 0
+                        val winnerAbbr = when {
+                            isFinal && awayWon -> awayAbbr
+                            isFinal && homeWon -> homeAbbr
+                            else -> null
+                        }
+                        val seriesText = if (winnerAbbr != null && (hw + aw) > 0) {
+                            val high = maxOf(hw, aw)
+                            val low = minOf(hw, aw)
+                            "$winnerAbbr wins series $high-$low"
+                        } else null
+                        if (seriesText != null) {
+                            Text(
+                                seriesText,
+                                fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f),
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+                TeamCellWithName(
+                    logoUrl = homeLogo,
+                    fullName = homeTeam,
+                    abbreviation = homeAbbr,
+                    dim = isFinal && !homeWon
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TeamCellWithName(
+    logoUrl: String?,
+    fullName: String?,
+    abbreviation: String,
+    dim: Boolean
+) {
+    val alpha = if (dim) 0.45f else 1f
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.width(110.dp)
+    ) {
+        if (!logoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = fullName ?: abbreviation,
+                modifier = Modifier.size(40.dp),
+                contentScale = ContentScale.Fit,
+                alpha = alpha
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(40.dp).clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.12f * alpha)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(abbreviation, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = alpha))
+            }
+        }
+        Text(
+            fullName ?: abbreviation,
+            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = alpha),
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+// ── UPCOMING compact row ────────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun UpcomingGameRow(event: SportsEvent, onClick: () -> Unit) {
+    val league = event.league
+    val awayAbbr = TeamLogos.abbrev(league, event.awayTeam).ifBlank { (event.awayTeam ?: "AWAY").take(3).uppercase() }
+    val homeAbbr = TeamLogos.abbrev(league, event.homeTeam).ifBlank { (event.homeTeam ?: "HOME").take(3).uppercase() }
+    val timeStr = formatGameTimeLocal(event.program.startTime).ifBlank { formatStartTime(event.startEpochSec) }
+    val net = event.networkLabel
+    val ch = event.channelNumber
+    val tail = listOfNotNull(timeStr.takeIf { it.isNotBlank() }, net).joinToString(" · ")
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .focusable(),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = PlexCard,
+            focusedContainerColor = PlexSurface
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 36.dp, height = 18.dp)
+                    .background(leagueGradient(league)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(league.uppercase(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+            Text(
+                "$awayAbbr @ $homeAbbr",
+                fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                modifier = Modifier.weight(1f),
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+            if (tail.isNotBlank()) {
+                Text(
+                    tail,
+                    fontSize = 12.sp, color = PlexTextSecondary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (!ch.isNullOrBlank()) {
+                Text(
+                    "Ch $ch",
+                    fontSize = 11.sp, color = PlexTextTertiary, fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+// ── SPORTS NEWS (horizontal) ────────────────────────────────────────────
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun NewsRow(articles: List<EspnArticle>, onSelect: (EspnArticle) -> Unit) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        itemsIndexed(articles) { _, article ->
+            NewsCard(article = article, onClick = { onSelect(article) })
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun NewsCard(article: EspnArticle, onClick: () -> Unit) {
+    val imageUrl = article.images.firstOrNull { !it.url.isNullOrBlank() }?.url
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .width(260.dp)
+            .height(200.dp)
+            .focusable(),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = PlexCard,
+            focusedContainerColor = PlexCard
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
+            focusedBorder = Border(border = androidx.compose.foundation.BorderStroke(2.dp, PlexTextPrimary))
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(PlexSurface),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = article.headline,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Text("ESPN", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = PlexTextTertiary)
+                }
+            }
+            Text(
+                article.headline ?: "",
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextPrimary,
+                maxLines = 3, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NewsArticleDialog(article: EspnArticle, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = PlexCard,
+        title = {
+            androidx.compose.material3.Text(
+                article.headline ?: "ESPN",
+                color = PlexTextPrimary, fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (!article.byline.isNullOrBlank()) {
+                    androidx.compose.material3.Text(
+                        article.byline, fontSize = 12.sp, color = PlexTextTertiary
+                    )
+                }
+                if (!article.description.isNullOrBlank()) {
+                    androidx.compose.material3.Text(
+                        article.description, fontSize = 14.sp, color = PlexTextSecondary
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                androidx.compose.material3.Text("Close", color = PlexTextPrimary)
+            }
+        }
+    )
 }
 
 // ── Record dialog ───────────────────────────────────────────────────────
@@ -683,7 +898,7 @@ private fun RecordEventDialog(
                     )
                 }
                 androidx.compose.material3.Text(
-                    formatStartTime(event.startEpochSec),
+                    formatGameTimeLocal(event.program.startTime).ifBlank { formatStartTime(event.startEpochSec) },
                     color = PlexTextSecondary, fontSize = 14.sp
                 )
                 if (isAlreadyScheduled) {
@@ -698,10 +913,10 @@ private fun RecordEventDialog(
         confirmButton = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 TextButton(onClick = onRecordOnce) {
-                    androidx.compose.material3.Text("Record Once", color = Color(0xFFEF4444))
+                    androidx.compose.material3.Text("Record Once", color = LiveRedDot)
                 }
                 TextButton(onClick = onRecordSeries) {
-                    androidx.compose.material3.Text("Record Series", color = Color(0xFFEF4444))
+                    androidx.compose.material3.Text("Record Series", color = LiveRedDot)
                 }
             }
         },
@@ -714,21 +929,6 @@ private fun RecordEventDialog(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────
-
-private fun leagueLabel(league: String): String = when (league) {
-    "nfl" -> "NFL"
-    "nba" -> "NBA"
-    "mlb" -> "MLB"
-    "nhl" -> "NHL"
-    "ncaa" -> "NCAA"
-    "soccer" -> "SOCCER"
-    "golf" -> "GOLF"
-    "ufc" -> "UFC"
-    "nascar" -> "NASCAR"
-    "tennis" -> "TENNIS"
-    "wwe" -> "WWE"
-    else -> "SPORT"
-}
 
 private fun formatChannelLabel(event: SportsEvent): String {
     val number = event.channelNumber
@@ -743,15 +943,8 @@ private fun formatChannelLabel(event: SportsEvent): String {
 
 private fun formatStartTime(epochSec: Long): String {
     if (epochSec <= 0L) return ""
-    return SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(epochSec * 1000))
-}
-
-private fun abbreviateTeamName(name: String): String {
-    val cleaned = name.trim()
-    val words = cleaned.split(Regex("\\s+")).filter { it.isNotBlank() }
-    return when {
-        words.isEmpty() -> ""
-        words.size == 1 -> words[0].take(3).uppercase()
-        else -> words.takeLast(1).first().take(3).uppercase()
+    val fmt = SimpleDateFormat("h:mm a", Locale.getDefault()).apply {
+        timeZone = TimeZone.getDefault()
     }
+    return fmt.format(Date(epochSec * 1000))
 }

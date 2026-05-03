@@ -242,3 +242,24 @@ data class SeriesInfo(
     @SerializedName("gameNumber") val gameNumber: Int? = null,
     @SerializedName("maxLength") val maxLength: Int? = null
 )
+
+// ── ESPN site API news (https://site.api.espn.com/apis/site/v2/sports/.../news) ──
+
+data class EspnNewsResponse(
+    @SerializedName("articles") val articles: List<EspnArticle> = emptyList()
+)
+
+data class EspnArticle(
+    @SerializedName("headline") val headline: String? = null,
+    @SerializedName("description") val description: String? = null,
+    @SerializedName("published") val published: String? = null,
+    @SerializedName("byline") val byline: String? = null,
+    @SerializedName("type") val type: String? = null,
+    @SerializedName("images") val images: List<EspnImage> = emptyList()
+)
+
+data class EspnImage(
+    @SerializedName("url") val url: String? = null,
+    @SerializedName("width") val width: Int? = null,
+    @SerializedName("height") val height: Int? = null
+)

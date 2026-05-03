@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.models.Channel
 import com.airdvr.tv.data.models.EpgProgram
+import com.airdvr.tv.data.models.EspnArticle
 import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.data.models.RecordingSchedule
 import com.airdvr.tv.data.models.ScheduleRequest
@@ -21,9 +22,9 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * One sporting event surfaced on the Sports Calendar screen — pre-joined
- * with its channel so the screen can render network/channel info without
- * a second lookup.
+ * One sporting event surfaced on the Sports Hub — pre-joined with its
+ * channel so the screen can render network/channel info without a
+ * second lookup.
  */
 data class SportsEvent(
     val program: EpgProgram,
@@ -41,20 +42,27 @@ data class SportsEvent(
             val now = System.currentTimeMillis() / 1000
             return startEpochSec <= now && now < endEpochSec
         }
+    val isFinal: Boolean
+        get() = (score?.status ?: "").lowercase().contains("final")
     val networkLabel: String?
         get() = channel?.guideName
     val channelNumber: String?
         get() = channel?.guideNumber ?: program.guideNumber
 }
 
-/** Sports Calendar UI state. */
+/** Sports Hub UI state. */
 data class SportsCalendarUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val selectedLeague: String = "all",
-    val todaysGames: List<SportsEvent> = emptyList(),
+    /** Live games right now (in-progress). */
+    val liveGames: List<SportsEvent> = emptyList(),
+    /** Today: scheduled (start in future) + final results from earlier today. */
+    val todayResults: List<SportsEvent> = emptyList(),
+    /** Compact list of upcoming days — limited to next 3 calendar days. */
     val upcomingByDay: List<DaySection> = emptyList(),
-    val expandedDayKeys: Set<String> = emptySet(),
+    /** ESPN headlines for the selected league (or merged across the four when ALL). */
+    val news: List<EspnArticle> = emptyList(),
     val schedules: List<RecordingSchedule> = emptyList(),
     val toastMessage: String? = null
 )
@@ -66,9 +74,27 @@ data class DaySection(
     val events: List<SportsEvent>
 )
 
+/** Hub league filter — restricted to the four scoreboard sports. */
+val HUB_LEAGUES: List<Pair<String, String>> = listOf(
+    "all" to "ALL",
+    "nba" to "NBA",
+    "nfl" to "NFL",
+    "mlb" to "MLB",
+    "nhl" to "NHL"
+)
+
+/** ESPN sport/league slugs for the news endpoint. */
+private val ESPN_NEWS_PATH: Map<String, Pair<String, String>> = mapOf(
+    "nba" to ("basketball" to "nba"),
+    "nfl" to ("football" to "nfl"),
+    "mlb" to ("baseball" to "mlb"),
+    "nhl" to ("hockey" to "nhl")
+)
+
 class SportsCalendarViewModel : ViewModel() {
 
     private val api = ApiClient.api
+    private val espnApi = ApiClient.espnApi
 
     private val _uiState = MutableStateFlow(SportsCalendarUiState())
     val uiState: StateFlow<SportsCalendarUiState> = _uiState.asStateFlow()
@@ -92,10 +118,10 @@ class SportsCalendarViewModel : ViewModel() {
             try {
                 val now = java.time.Instant.now()
                 val start = now.toString()
-                val end = now.plusSeconds(14L * 24 * 3600).toString()
-                val resp = api.getGuide(start = start, end = end, hours = 336, limit = 50000)
+                val end = now.plusSeconds(7L * 24 * 3600).toString()
+                val resp = api.getGuide(start = start, end = end, hours = 168, limit = 50000)
                 if (!resp.isSuccessful) {
-                    Log.d("SPORTSCAL", "Guide fetch failed: ${resp.code()}")
+                    Log.d("SPORTSHUB", "Guide fetch failed: ${resp.code()}")
                     _uiState.value = _uiState.value.copy(isLoading = false, error = "Could not load sports schedule")
                     return@launch
                 }
@@ -115,19 +141,19 @@ class SportsCalendarViewModel : ViewModel() {
                             awayTeam = away
                         )
                     }
+                    // Hub only surfaces the four major leagues — everything else stays in the guide.
+                    .filter { it.league in setOf("nba", "nfl", "mlb", "nhl") }
                     .sortedBy { it.startEpochSec }
-                Log.d("SPORTSCAL", "Found ${sports.size} sports events out of ${programs.size} programs")
+                Log.d("SPORTSHUB", "Found ${sports.size} hub events out of ${programs.size} programs")
                 allEvents = sports
                 applyFilter(_uiState.value.selectedLeague)
 
-                // Fetch existing schedules so we can show "Already scheduled" hints.
                 fetchSchedules()
-
-                // Pull live scores and start 30s polling while live games are present.
                 fetchScoresAndAttach()
+                fetchNews(_uiState.value.selectedLeague)
                 startScoresPollingIfNeeded()
             } catch (e: Exception) {
-                Log.d("SPORTSCAL", "Exception: ${e.message}")
+                Log.d("SPORTSHUB", "Exception: ${e.message}")
                 _uiState.value = _uiState.value.copy(isLoading = false, error = "Network error: ${e.message}")
             }
         }
@@ -140,8 +166,41 @@ class SportsCalendarViewModel : ViewModel() {
             val body = resp.body() ?: return
             liveScores = body.nba + body.nfl + body.mlb + body.nhl
             attachScoresToEvents()
+            // Win probabilities for live games — fire-and-forget, attached as they return.
+            fetchWinProbabilitiesForLive()
         } catch (e: Exception) {
-            Log.d("SPORTSCAL", "scores fetch failed: ${e.message}")
+            Log.d("SPORTSHUB", "scores fetch failed: ${e.message}")
+        }
+    }
+
+    private suspend fun fetchWinProbabilitiesForLive() {
+        val live = allEvents.filter { it.isLive && it.score != null }
+        if (live.isEmpty()) return
+        val updates = mutableMapOf<String, GameScore>()
+        for (ev in live) {
+            val s = ev.score ?: continue
+            val status = (s.status ?: "").lowercase()
+            if (!status.contains("progress") && !status.contains("inprogress")) continue
+            val home = s.homeTeam ?: continue
+            val away = s.awayTeam ?: continue
+            val lg = (s.league ?: ev.league).ifBlank { ev.league }
+            try {
+                val resp = api.getWinProbability(lg, home, away)
+                if (resp.isSuccessful) {
+                    val body = resp.body() ?: continue
+                    updates[gameKey(s)] = s.copy(
+                        homeWinProbability = body.homeWinProbability,
+                        awayWinProbability = body.awayWinProbability
+                    )
+                }
+            } catch (_: Exception) { /* skip on failure */ }
+        }
+        if (updates.isNotEmpty()) {
+            allEvents = allEvents.map { ev ->
+                val key = ev.score?.let { gameKey(it) }
+                if (key != null && updates.containsKey(key)) ev.copy(score = updates[key]) else ev
+            }
+            applyFilter(_uiState.value.selectedLeague)
         }
     }
 
@@ -181,13 +240,11 @@ class SportsCalendarViewModel : ViewModel() {
 
     private fun startScoresPollingIfNeeded() {
         scoresPollJob?.cancel()
-        // Only poll when at least one event is currently live.
         if (allEvents.none { it.isLive }) return
         scoresPollJob = viewModelScope.launch {
             while (true) {
                 delay(30_000)
                 fetchScoresAndAttach()
-                // Stop polling once nothing is live anymore.
                 if (allEvents.none { it.isLive }) break
             }
         }
@@ -202,25 +259,41 @@ class SportsCalendarViewModel : ViewModel() {
         } catch (_: Exception) { /* non-fatal */ }
     }
 
-    fun setLeague(league: String) {
-        applyFilter(league)
+    /**
+     * Fetch ESPN headlines. When [league] is "all" we merge a few from each
+     * of the four leagues (NBA/NFL/MLB/NHL); otherwise just one league.
+     */
+    private fun fetchNews(league: String) {
+        viewModelScope.launch {
+            val targets = when (league) {
+                "all" -> ESPN_NEWS_PATH.keys.toList()
+                else -> listOfNotNull(league.takeIf { ESPN_NEWS_PATH.containsKey(it) })
+            }
+            val collected = mutableListOf<EspnArticle>()
+            for (lg in targets) {
+                val (sport, leagueSlug) = ESPN_NEWS_PATH[lg] ?: continue
+                try {
+                    val resp = espnApi.getNews(sport, leagueSlug, limit = if (league == "all") 4 else 10)
+                    if (resp.isSuccessful) {
+                        resp.body()?.articles?.let { collected.addAll(it) }
+                    }
+                } catch (e: Exception) {
+                    Log.d("SPORTSHUB", "ESPN news fetch failed for $lg: ${e.message}")
+                }
+            }
+            _uiState.value = _uiState.value.copy(news = collected)
+        }
     }
 
-    fun toggleDayExpanded(key: String) {
-        val expanded = _uiState.value.expandedDayKeys
-        _uiState.value = _uiState.value.copy(
-            expandedDayKeys = if (expanded.contains(key)) expanded - key else expanded + key
-        )
+    fun setLeague(league: String) {
+        if (_uiState.value.selectedLeague == league) return
+        applyFilter(league)
+        fetchNews(league)
     }
 
     private fun applyFilter(league: String) {
         val filtered = if (league == "all") allEvents else allEvents.filter { it.league == league }
-        // Sort tier 1 leagues first, then by start time.
-        val tier1 = setOf("nfl", "nba", "mlb", "nhl")
-        val sorted = filtered.sortedWith(
-            compareBy<SportsEvent> { if (tier1.contains(it.league)) 0 else 1 }
-                .thenBy { it.startEpochSec }
-        )
+        val sorted = filtered.sortedBy { it.startEpochSec }
 
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
@@ -228,17 +301,14 @@ class SportsCalendarViewModel : ViewModel() {
             java.time.Instant.ofEpochSecond(ev.startEpochSec).atZone(zone).toLocalDate()
         }
 
-        // Today: live events first, then upcoming. Past events (already finished today) are excluded.
-        val now = System.currentTimeMillis() / 1000
-        val todays = (byDate[today] ?: emptyList())
-            .filter { it.endEpochSec > now }
-            .sortedWith(
-                compareBy<SportsEvent> { if (it.isLive) 0 else 1 }
-                    .thenBy { it.startEpochSec }
-            )
+        // Live = currently playing (any league bucket).
+        val live = sorted.filter { it.isLive }
 
-        // Upcoming: tomorrow → +13d
-        val sections = (1..13).mapNotNull { offset ->
+        // Today's results = today's events that are NOT live (scheduled later or finished).
+        val todays = (byDate[today] ?: emptyList()).filter { !it.isLive }
+
+        // Upcoming: tomorrow → +3d (matches the 3-day spec)
+        val sections = (1..3).mapNotNull { offset ->
             val date = today.plusDays(offset.toLong())
             val events = byDate[date] ?: return@mapNotNull null
             if (events.isEmpty()) return@mapNotNull null
@@ -250,17 +320,12 @@ class SportsCalendarViewModel : ViewModel() {
             )
         }
 
-        // Tomorrow expanded by default; preserve any user expansions already in state.
-        val current = _uiState.value.expandedDayKeys
-        val tomorrowKey = today.plusDays(1).toString()
-        val expanded = if (current.isEmpty()) setOf(tomorrowKey) else current
-
         _uiState.value = _uiState.value.copy(
             isLoading = false,
             selectedLeague = league,
-            todaysGames = todays,
-            upcomingByDay = sections,
-            expandedDayKeys = expanded
+            liveGames = live,
+            todayResults = todays,
+            upcomingByDay = sections
         )
     }
 
@@ -320,12 +385,12 @@ class SportsCalendarViewModel : ViewModel() {
     private fun showToast(msg: String) {
         _uiState.value = _uiState.value.copy(toastMessage = msg)
         viewModelScope.launch {
-            kotlinx.coroutines.delay(3000)
+            delay(3000)
             _uiState.value = _uiState.value.copy(toastMessage = null)
         }
     }
 
-    // ── Sports filtering ────────────────────────────────────────────────────
+    // ── Sports filtering — kept on companion for cross-screen reuse ─────
 
     companion object {
         private val SPORTS_TITLE_REGEX = Regex(
@@ -361,12 +426,7 @@ class SportsCalendarViewModel : ViewModel() {
             }
         }
 
-        /**
-         * Parse a matchup title into (away, home) team names. Returns null if
-         * the title doesn't follow a recognised "X at Y" / "X vs Y" pattern.
-         */
         fun parseTeams(title: String): Pair<String, String>? {
-            // Strip a leading league prefix like "NFL Football: " before matching.
             val stripped = title
                 .replace(Regex("^(NFL|NBA|MLB|NHL|NCAA|MLS|PGA|UFC|UFC Fight Night)[^:]*:\\s*", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("^(College Football|College Basketball|MLS Soccer|Premier League)[^:]*:\\s*", RegexOption.IGNORE_CASE), "")

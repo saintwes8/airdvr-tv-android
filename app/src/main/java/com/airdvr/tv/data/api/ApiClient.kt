@@ -127,4 +127,18 @@ object ApiClient {
             .build()
             .create(AirDVRApi::class.java)
     }
+
+    /** ESPN public site API (sports headlines). No auth, separate base URL. */
+    val espnApi: EspnApi by lazy {
+        val espnClient = OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(15, TimeUnit.SECONDS)
+            .build()
+        Retrofit.Builder()
+            .baseUrl("https://site.api.espn.com/")
+            .client(espnClient)
+            .addConverterFactory(GsonConverterFactory.create(gson))
+            .build()
+            .create(EspnApi::class.java)
+    }
 }
