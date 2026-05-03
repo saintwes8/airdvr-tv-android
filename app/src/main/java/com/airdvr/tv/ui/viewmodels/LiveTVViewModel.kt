@@ -115,6 +115,7 @@ data class LiveTVUiState(
     // ── Scorebug overlay ──
     val gamePickerVisible: Boolean = false,
     val availableGames: List<GameScore> = emptyList(),  // populated when picker opens
+    val pickerLeagueFilter: String = "ALL",             // ALL, NBA, NFL, MLB, NHL
     val trackedGameKeys: Set<String> = emptySet(),
     val scorebugGames: List<GameScore> = emptyList()
 ) {
@@ -1113,13 +1114,13 @@ class LiveTVViewModel : ViewModel() {
     /**
      * Filter the game list shown in the picker:
      *  - Keep games currently in progress
-     *  - Keep games scheduled to start within the next 12 hours
-     *  - Drop final/postponed/canceled/etc.
+     *  - Keep games scheduled to start within the next 24 hours
+     *  - Drop final/postponed/canceled/notnecessary/etc.
      * Sort: in-progress first, then by start time ascending.
      */
     private fun filterPickerGames(games: List<GameScore>): List<GameScore> {
         val now = System.currentTimeMillis() / 1000L
-        val window = 12 * 60 * 60L
+        val window = 24 * 60 * 60L
         return games.filter { g ->
             val s = (g.status ?: "").lowercase().replace(" ", "")
             val inProgress = s.contains("progress") || s.contains("live")
@@ -1141,6 +1142,10 @@ class LiveTVViewModel : ViewModel() {
                 { g -> parseIsoToEpochSec(g.startTime) }
             )
         )
+    }
+
+    fun setPickerLeagueFilter(league: String) {
+        _uiState.value = _uiState.value.copy(pickerLeagueFilter = league.uppercase())
     }
 
     fun closeGamePicker() {

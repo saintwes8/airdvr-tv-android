@@ -410,6 +410,7 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
     val scale by animateFloatAsState(if (focused) 1.04f else 1f, label = "rps")
     val isUnwatched = recording.resumePositionSec == 0
     val posterUrl = rememberPosterUrl(recording.title)
+    val isGenericSports = com.airdvr.tv.util.shouldSkipTmdbForSports(recording.title)
 
     Surface(
         onClick = onClick,
@@ -429,8 +430,13 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Poster image
-            if (!posterUrl.isNullOrBlank()) {
+            // Poster image (sports titles get league art instead of TMDB)
+            if (isGenericSports) {
+                com.airdvr.tv.ui.components.SportsTitleArtwork(
+                    title = recording.title,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else if (!posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = posterUrl,
                     contentDescription = recording.title,

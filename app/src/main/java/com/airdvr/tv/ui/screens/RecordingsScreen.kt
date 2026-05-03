@@ -682,6 +682,7 @@ private fun ShowGroupCard(
     val posterUrl = rememberPosterUrl(group.title)
     val episodeCount = group.recordings.size
     val totalSize = group.totalSizeMb
+    val isGenericSports = com.airdvr.tv.util.shouldSkipTmdbForSports(group.title)
 
     Card(
         onClick = onClick,
@@ -699,7 +700,12 @@ private fun ShowGroupCard(
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (!posterUrl.isNullOrBlank()) {
+            if (isGenericSports) {
+                com.airdvr.tv.ui.components.SportsTitleArtwork(
+                    title = group.title,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                )
+            } else if (!posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = posterUrl,
                     contentDescription = group.title,
@@ -844,6 +850,7 @@ private fun RecordingPosterCard(
         (recording.resumePositionSec.toFloat() / recording.duration).coerceIn(0f, 1f)
     } else 0f
     val isCloud = recording.storageType?.lowercase() == "cloud"
+    val isGenericSports = com.airdvr.tv.util.shouldSkipTmdbForSports(recording.title)
 
     Card(
         onClick = onClick,
@@ -868,8 +875,13 @@ private fun RecordingPosterCard(
         )
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            // Poster artwork
-            if (!posterUrl.isNullOrBlank()) {
+            // Poster artwork (sports titles get league art instead of TMDB)
+            if (isGenericSports) {
+                com.airdvr.tv.ui.components.SportsTitleArtwork(
+                    title = recording.title,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                )
+            } else if (!posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = posterUrl,
                     contentDescription = recording.title,

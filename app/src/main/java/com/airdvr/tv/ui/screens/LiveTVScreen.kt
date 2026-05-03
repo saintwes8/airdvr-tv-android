@@ -1149,6 +1149,8 @@ private fun FullscreenLayout(
             GamePickerOverlay(
                 games = uiState.availableGames,
                 trackedKeys = uiState.trackedGameKeys,
+                leagueFilter = uiState.pickerLeagueFilter,
+                onLeagueFilter = { viewModel.setPickerLeagueFilter(it) },
                 onPick = { viewModel.pickGame(it) },
                 onClose = { viewModel.closeGamePicker() }
             )
@@ -1868,26 +1870,30 @@ private fun SportsScorePanel(
 ) {
     val homeFull = score.homeTeam?.takeIf { it.isNotBlank() }
     val awayFull = score.awayTeam?.takeIf { it.isNotBlank() }
-    val homeShort = TeamLogos.shortName(homeFull)
-    val awayShort = TeamLogos.shortName(awayFull)
     val live = isInProgress(score.status)
+    val isFinal = (score.status ?: "").lowercase().contains("final")
     val homePts = score.homeScore
     val awayPts = score.awayScore
-    val showScores = homePts != null && awayPts != null
+    val showScores = (live || isFinal) && homePts != null && awayPts != null
+    val statusRaw = (score.status ?: "").lowercase().replace(" ", "")
+    val isJunkStatus = statusRaw.contains("notnecessary") ||
+        statusRaw.contains("postponed") || statusRaw.contains("canceled") ||
+        statusRaw.contains("cancelled") || statusRaw.contains("suspended") ||
+        statusRaw.contains("delayed") || statusRaw.isBlank()
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // Title: "Pistons vs Magic" (or fall back to program title if teams missing)
+        // Title: full team names — "Boston Celtics vs Philadelphia 76ers"
         val matchupTitle = when {
-            awayShort.isNotBlank() && homeShort.isNotBlank() -> "$awayShort vs $homeShort"
+            !awayFull.isNullOrBlank() && !homeFull.isNullOrBlank() -> "$awayFull vs $homeFull"
             else -> program.title ?: ""
         }
         Text(
             matchupTitle,
-            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
+            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary,
             maxLines = 1, overflow = TextOverflow.Ellipsis
         )
 
-        // Score line — large bold "56 - 57"
+        // Score line — large bold "56 - 57" (only when started)
         if (showScores) {
             Text(
                 "$awayPts - $homePts",
@@ -1895,7 +1901,7 @@ private fun SportsScorePanel(
             )
         }
 
-        // LIVE · 3rd · 8:46  (or status / kickoff time)
+        // Status line — LIVE · Q3 · 8:46  /  FINAL  /  TIP OFF 7:30 PM
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1906,15 +1912,17 @@ private fun SportsScorePanel(
             }
             val q = score.quarter?.takeIf { it.isNotBlank() }
             val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
+            val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+            val tipOff = parseIsoToEpochSec(score.startTime).takeIf { it > 0L }
+                ?.let { timeFmt.format(Date(it * 1000L)) }
+                ?: timeFmt.format(Date(program.startEpochSec * 1000L))
             val statusLine = when {
                 live && q != null && tr != null -> "$q · $tr"
                 live && q != null -> q
                 live && tr != null -> tr
-                !score.status.isNullOrBlank() -> score.status!!
-                else -> {
-                    val timeFmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-                    timeFmt.format(Date(program.startEpochSec * 1000))
-                }
+                isFinal -> "FINAL"
+                isJunkStatus -> "TIP OFF $tipOff"
+                else -> "TIP OFF $tipOff"
             }
             Text(statusLine, fontSize = 14.sp, color = PlexTextSecondary, fontWeight = FontWeight.Medium)
         }
@@ -2172,18 +2180,34 @@ private fun PipChannelPicker(
 // GAME PICKER OVERLAY
 // ═══════════════════════════════════════════════════════════════════════════
 
+private val PICKER_LEAGUES = listOf("ALL", "NBA", "NFL", "MLB", "NHL")
+
+private fun leaguePillColor(league: String?): Color = when ((league ?: "").uppercase()) {
+    "NBA" -> Color(0xFFC8102E)        // NBA red
+    "NFL" -> Color(0xFF013369)        // NFL navy
+    "MLB" -> Color(0xFF002D72)        // MLB blue
+    "NHL" -> Color(0xFF111111)        // NHL black
+    else -> Color(0xFF2A2A2A)
+}
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun GamePickerOverlay(
     games: List<GameScore>,
     trackedKeys: Set<String>,
+    leagueFilter: String,
+    onLeagueFilter: (String) -> Unit,
     onPick: (GameScore) -> Unit,
     onClose: () -> Unit
 ) {
-    val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(games.size) {
-        if (games.isNotEmpty()) {
-            try { firstFocus.requestFocus() } catch (_: Exception) {}
+    val displayedGames = remember(games, leagueFilter) {
+        if (leagueFilter == "ALL") games
+        else games.filter { (it.league ?: "").equals(leagueFilter, ignoreCase = true) }
+    }
+    val firstRowFocus = remember { FocusRequester() }
+    LaunchedEffect(displayedGames.size) {
+        if (displayedGames.isNotEmpty()) {
+            try { firstRowFocus.requestFocus() } catch (_: Exception) {}
         }
     }
     Box(
@@ -2194,23 +2218,35 @@ private fun GamePickerOverlay(
     ) {
         Column(
             modifier = Modifier
-                .width(720.dp)
-                .fillMaxHeight(0.85f)
+                .width(820.dp)
+                .fillMaxHeight(0.88f)
                 .background(Color.Black)
                 .padding(28.dp)
         ) {
             Text(
                 "Live & upcoming games",
-                fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White
+                fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
             Text(
                 "SELECT adds a scorebug · BACK closes · UP/DOWN to scroll",
                 fontSize = 12.sp, color = PlexTextTertiary
             )
             Spacer(Modifier.height(16.dp))
 
-            if (games.isEmpty()) {
+            // League filter tabs
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PICKER_LEAGUES.forEach { league ->
+                    LeagueFilterTab(
+                        league = league,
+                        selected = leagueFilter.equals(league, ignoreCase = true),
+                        onClick = { onLeagueFilter(league) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            if (displayedGames.isEmpty()) {
                 Box(
                     Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -2224,7 +2260,9 @@ private fun GamePickerOverlay(
                             tint = PlexTextTertiary, modifier = Modifier.size(40.dp)
                         )
                         Text(
-                            "No games in progress or starting in the next 12 hours",
+                            if (leagueFilter == "ALL")
+                                "No games in progress or starting in the next 24 hours"
+                            else "No $leagueFilter games right now",
                             color = PlexTextSecondary, fontSize = 14.sp
                         )
                     }
@@ -2232,20 +2270,58 @@ private fun GamePickerOverlay(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    itemsIndexed(games) { idx, game ->
+                    itemsIndexed(displayedGames) { idx, game ->
                         val key = gameKey(game)
                         val isTracked = key in trackedKeys
-                        GamePickerRow(
+                        GamePickerCard(
                             game = game,
                             isTracked = isTracked,
                             onPick = { onPick(game) },
-                            modifier = if (idx == 0) Modifier.focusRequester(firstFocus) else Modifier
+                            modifier = if (idx == 0) Modifier.focusRequester(firstRowFocus) else Modifier
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun LeagueFilterTab(
+    league: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val pillColor = leaguePillColor(league)
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.height(36.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(18.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (selected) pillColor else Color(0xFF1A1A1A),
+            focusedContainerColor = if (selected) pillColor else Color(0xFF2A2A2A)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = androidx.tv.material3.Border.None,
+            focusedBorder = androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
+            )
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = 18.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                league,
+                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+                color = if (selected) Color.White else PlexTextSecondary
+            )
         }
     }
 }
@@ -2272,97 +2348,150 @@ private fun gamePeriodLabel(game: GameScore): String {
 
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun GamePickerRow(
+private fun GamePickerCard(
     game: GameScore,
     isTracked: Boolean,
     onPick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val league = game.league?.lowercase() ?: ""
+    val league = (game.league ?: "").lowercase()
+    val leagueLabel = league.uppercase().ifBlank { "—" }
     val live = isInProgress(game.status)
     val awayAbbr = TeamLogos.abbrev(league, game.awayTeam)
     val homeAbbr = TeamLogos.abbrev(league, game.homeTeam)
-    val awayFull = game.awayTeam?.takeIf { it.isNotBlank() } ?: awayAbbr
-    val homeFull = game.homeTeam?.takeIf { it.isNotBlank() } ?: homeAbbr
+    val awayLogo = TeamLogos.urlFor(league, game.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, game.homeTeam)
+    val pillColor = leaguePillColor(leagueLabel)
+
+    val cardGradient = Brush.horizontalGradient(
+        listOf(Color(0xFF111111), Color(0xFF0A0A0A))
+    )
 
     Surface(
         onClick = onPick,
-        modifier = modifier.fillMaxWidth().height(64.dp),
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(6.dp)),
+        modifier = modifier.fillMaxWidth().height(108.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isTracked) PlexAccent.copy(alpha = 0.18f) else Color(0xFF0A0A0A),
-            focusedContainerColor = Color(0xFF111A2C)
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent
         ),
         border = ClickableSurfaceDefaults.border(
             border = if (isTracked) androidx.tv.material3.Border(
                 border = androidx.compose.foundation.BorderStroke(1.dp, PlexAccent.copy(alpha = 0.5f))
-            ) else androidx.tv.material3.Border.None,
+            ) else androidx.tv.material3.Border(
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F1F1F))
+            ),
             focusedBorder = androidx.tv.material3.Border(
                 border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
             )
         )
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(cardGradient)
+                .padding(horizontal = 18.dp, vertical = 12.dp)
         ) {
-            // League badge
-            Text(
-                league.uppercase().ifBlank { "—" },
-                fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                color = PlexTextSecondary,
+            // League pill — top-left corner
+            Box(
                 modifier = Modifier
-                    .width(38.dp)
-                    .background(Color(0xFF1A1A1A), RoundedCornerShape(3.dp))
-                    .padding(horizontal = 5.dp, vertical = 3.dp),
-                textAlign = TextAlign.Center
-            )
-
-            if (live) {
-                // 🔴 LIVE  CLE 98 - BOS 102  Q4 5:32
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    modifier = Modifier.width(60.dp)
-                ) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(LiveRedDot))
-                    Text("LIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = LiveRedDot)
-                }
+                    .align(Alignment.TopStart)
+                    .background(pillColor, RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
+            ) {
                 Text(
-                    "$awayAbbr ${game.awayScore ?: "-"} - ${game.homeScore ?: "-"} $homeAbbr",
-                    fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    gamePeriodLabel(game),
-                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = PlexTextSecondary
-                )
-            } else {
-                // 8:00 PM  Cleveland Cavaliers vs Boston Celtics
-                Text(
-                    gameStartLabel(game),
-                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White,
-                    modifier = Modifier.width(72.dp)
-                )
-                Text(
-                    "$awayFull vs $homeFull",
-                    fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    leagueLabel,
+                    fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White
                 )
             }
 
+            // Tracked check — top-right
             if (isTracked) {
                 Icon(
                     Icons.Filled.Check, "Tracked",
                     tint = PlexAccent,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp).align(Alignment.TopEnd)
+                )
+            }
+
+            // Main row: logo + abbrev — vs/score — abbrev + logo
+            Row(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                TeamCell(logoUrl = awayLogo, abbrev = awayAbbr)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (live) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(Modifier.size(6.dp).clip(CircleShape).background(LiveRedDot))
+                            Text("LIVE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = LiveRedDot)
+                        }
+                        Text(
+                            "${game.awayScore ?: 0}  -  ${game.homeScore ?: 0}",
+                            fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White
+                        )
+                    } else {
+                        Text(
+                            "vs",
+                            fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = PlexTextSecondary
+                        )
+                    }
+                }
+                TeamCell(logoUrl = homeLogo, abbrev = homeAbbr)
+            }
+
+            // Bottom: time / period
+            Text(
+                if (live) "LIVE · ${gamePeriodLabel(game)}" else gameStartLabel(game).ifBlank { "—" },
+                fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                color = if (live) LiveRedDot else PlexTextTertiary,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamCell(logoUrl: String?, abbrev: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.width(96.dp)
+    ) {
+        Box(
+            modifier = Modifier.size(40.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!logoUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = logoUrl,
+                    contentDescription = abbrev,
+                    modifier = Modifier.size(40.dp),
+                    contentScale = ContentScale.Fit
                 )
             } else {
-                Box(Modifier.size(18.dp))
+                Text(
+                    abbrev.take(3),
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                    color = PlexTextSecondary
+                )
             }
         }
+        Text(
+            abbrev,
+            fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+            color = Color.White, maxLines = 1
+        )
     }
 }
 
@@ -2396,6 +2525,8 @@ private fun ScorebugRow(
     val league = game.league?.lowercase() ?: ""
     val awayAbbr = TeamLogos.abbrev(league, game.awayTeam)
     val homeAbbr = TeamLogos.abbrev(league, game.homeTeam)
+    val awayLogo = TeamLogos.urlFor(league, game.awayTeam)
+    val homeLogo = TeamLogos.urlFor(league, game.homeTeam)
     val live = isInProgress(game.status)
     val isFinal = (game.status ?: "").lowercase().contains("final")
     val hasScores = game.awayScore != null && game.homeScore != null
@@ -2404,26 +2535,28 @@ private fun ScorebugRow(
         modifier = Modifier
             .size(width = 280.dp, height = 44.dp)
             .background(Color(0xE6000000))
-            .padding(horizontal = 12.dp)
+            .padding(horizontal = 10.dp)
     ) {
         if (live || (isFinal && hasScores)) {
-            // [Away abbrev] [Away score] - [Home score] [Home abbrev]   [Period]
+            // [logo] [abbrev] [awayScore] | [homeScore] [abbrev] [logo]   [Period]
             Row(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                ScorebugLogo(awayLogo)
                 Text(awayAbbr, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                 Text(
                     "${game.awayScore ?: 0}",
                     fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White
                 )
-                Text("-", fontSize = 14.sp, color = Color.White)
+                Text("|", fontSize = 14.sp, color = PlexTextTertiary)
                 Text(
                     "${game.homeScore ?: 0}",
                     fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White
                 )
                 Text(homeAbbr, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                ScorebugLogo(homeLogo)
                 Spacer(Modifier.weight(1f))
                 Text(
                     if (isFinal) "FINAL" else gamePeriodLabel(game),
@@ -2434,24 +2567,40 @@ private fun ScorebugRow(
                 )
             }
         } else {
-            // Scheduled: [Away abbrev] vs [Home abbrev]   [Start time]
+            // Scheduled: [logo] [abbrev] vs [abbrev] [logo]   TIP OFF h:mm a
             Row(
                 modifier = Modifier.fillMaxSize(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                ScorebugLogo(awayLogo)
                 Text(awayAbbr, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                Text("vs", fontSize = 14.sp, color = PlexTextSecondary)
+                Text("vs", fontSize = 12.sp, color = PlexTextSecondary)
                 Text(homeAbbr, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                ScorebugLogo(homeLogo)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    gameStartLabel(game).ifBlank { "—" },
-                    fontSize = 12.sp,
+                    "TIP OFF ${gameStartLabel(game).ifBlank { "—" }}",
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = PlexTextSecondary,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun ScorebugLogo(url: String?) {
+    if (!url.isNullOrBlank()) {
+        AsyncImage(
+            model = url,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        Box(Modifier.size(20.dp))
     }
 }
