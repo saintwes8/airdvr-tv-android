@@ -37,6 +37,8 @@ data class SettingsUiState(
     // Cloud-storage usage + retention
     val cloudStorageUsage: StorageUsage? = null,
     val cloudRetentionDays: Int? = null,   // null == "Never"
+    // Sports
+    val showBettingLines: Boolean = false,
     val error: String? = null,
     val toastMessage: String? = null
 ) {
@@ -51,6 +53,7 @@ class SettingsViewModel : ViewModel() {
     private val api = ApiClient.api
     private val tokenManager = AirDVRApp.instance.tokenManager
     private val guidePrefsManager = AirDVRApp.instance.guidePreferencesManager
+    private val sportsPrefsManager = AirDVRApp.instance.sportsPreferencesManager
     private val recordingPrefs = AirDVRApp.instance
         .applicationContext
         .getSharedPreferences("airdvr_recording_prefs", android.content.Context.MODE_PRIVATE)
@@ -64,9 +67,15 @@ class SettingsViewModel : ViewModel() {
             selectedQuality = guidePrefsManager.quality.value,
             guideOpacity = guidePrefsManager.opacity.value,
             guideColor = guidePrefsManager.color.value,
-            keepLocalCopyAfterCloud = recordingPrefs.getBoolean("keep_local_copy", true)
+            keepLocalCopyAfterCloud = recordingPrefs.getBoolean("keep_local_copy", true),
+            showBettingLines = sportsPrefsManager.showBettingLines.value
         )
         load()
+    }
+
+    fun setShowBettingLines(value: Boolean) {
+        sportsPrefsManager.setShowBettingLines(value)
+        _uiState.value = _uiState.value.copy(showBettingLines = value)
     }
 
     fun load() {

@@ -310,6 +310,19 @@ fun SettingsScreen(
             }
             item { Divider() }
 
+            // ── Sports Data ──
+            item { SectionLabel("SPORTS DATA") }
+            item {
+                ToggleRow(
+                    label = "Show betting lines",
+                    isEnabled = true,
+                    isOn = uiState.showBettingLines,
+                    trailingHint = "Display point spread, over/under, and money line on sports overlays",
+                    onToggle = { viewModel.setShowBettingLines(!uiState.showBettingLines) }
+                )
+            }
+            item { Divider() }
+
             // ── About ──
             item { SectionLabel("ABOUT") }
             item { SettingsRow("App Version", uiState.appVersion.ifBlank { "1.0.0" }) }

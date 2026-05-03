@@ -4,6 +4,7 @@ import android.app.Application
 import com.airdvr.tv.data.api.ApiClient
 import com.airdvr.tv.data.stream.StreamModeManager
 import com.airdvr.tv.util.GuidePreferencesManager
+import com.airdvr.tv.util.SportsPreferencesManager
 import com.airdvr.tv.util.TokenManager
 
 class AirDVRApp : Application() {
@@ -12,12 +13,15 @@ class AirDVRApp : Application() {
         private set
     lateinit var guidePreferencesManager: GuidePreferencesManager
         private set
+    lateinit var sportsPreferencesManager: SportsPreferencesManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
         instance = this
         tokenManager = TokenManager(this)
         guidePreferencesManager = GuidePreferencesManager(this)
+        sportsPreferencesManager = SportsPreferencesManager(this)
         ApiClient.init(tokenManager)
         StreamModeManager.start()
     }

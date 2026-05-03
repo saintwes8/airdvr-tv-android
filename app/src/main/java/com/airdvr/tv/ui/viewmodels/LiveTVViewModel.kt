@@ -117,7 +117,10 @@ data class LiveTVUiState(
     val availableGames: List<GameScore> = emptyList(),  // populated when picker opens
     val pickerLeagueFilter: String = "ALL",             // ALL, NBA, NFL, MLB, NHL
     val trackedGameKeys: Set<String> = emptySet(),
-    val scorebugGames: List<GameScore> = emptyList()
+    val scorebugGames: List<GameScore> = emptyList(),
+
+    // ── Sports preferences ──
+    val showBettingLines: Boolean = false
 ) {
     val filteredChannels: List<Channel>
         get() {
@@ -177,6 +180,7 @@ class LiveTVViewModel : ViewModel() {
     private val streamRepo = StreamRepository()
     private val api = ApiClient.api
     private val guidePrefsManager = AirDVRApp.instance.guidePreferencesManager
+    private val sportsPrefsManager = AirDVRApp.instance.sportsPreferencesManager
 
     private val _uiState = MutableStateFlow(LiveTVUiState())
     val uiState: StateFlow<LiveTVUiState> = _uiState.asStateFlow()
@@ -197,8 +201,14 @@ class LiveTVViewModel : ViewModel() {
             userInitial = initial,
             ccEnabled = guidePrefsManager.ccEnabled.value,
             guideOpacity = guidePrefsManager.opacity.value,
-            guideColorHex = guidePrefsManager.color.value
+            guideColorHex = guidePrefsManager.color.value,
+            showBettingLines = sportsPrefsManager.showBettingLines.value
         )
+        viewModelScope.launch {
+            sportsPrefsManager.showBettingLines.collect {
+                _uiState.value = _uiState.value.copy(showBettingLines = it)
+            }
+        }
         viewModelScope.launch {
             guidePrefsManager.opacity.collect {
                 _uiState.value = _uiState.value.copy(guideOpacity = it)

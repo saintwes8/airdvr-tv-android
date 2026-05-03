@@ -45,6 +45,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -1130,7 +1131,8 @@ private fun FullscreenLayout(
                 schedules = uiState.schedules,
                 sportsScore = uiState.currentSportsScore,
                 streamMode = uiState.streamMode,
-                pipActive = uiState.pipEnabled
+                pipActive = uiState.pipEnabled,
+                showBettingLines = uiState.showBettingLines
             )
         }
 
@@ -1237,7 +1239,8 @@ private fun FullscreenActionOverlay(
     schedules: List<com.airdvr.tv.data.models.RecordingSchedule> = emptyList(),
     sportsScore: GameScore? = null,
     streamMode: com.airdvr.tv.data.stream.StreamMode = com.airdvr.tv.data.stream.StreamMode.TUNNEL,
-    pipActive: Boolean = false
+    pipActive: Boolean = false,
+    showBettingLines: Boolean = false
 ) {
     if (channel == null) return
     Box(
@@ -1292,7 +1295,8 @@ private fun FullscreenActionOverlay(
                         SportsScorePanel(
                             score = sportsScore,
                             program = program,
-                            channel = channel
+                            channel = channel,
+                            showBetting = showBettingLines
                         )
                     } else {
                         // Show title
@@ -1867,7 +1871,8 @@ private fun isInProgress(status: String?): Boolean {
 private fun SportsScorePanel(
     score: GameScore,
     program: EpgProgram,
-    channel: Channel?
+    channel: Channel?,
+    showBetting: Boolean = false
 ) {
     val homeFull = score.homeTeam?.takeIf { it.isNotBlank() }
     val awayFull = score.awayTeam?.takeIf { it.isNotBlank() }
@@ -1928,6 +1933,11 @@ private fun SportsScorePanel(
             Text(statusLine, fontSize = 14.sp, color = PlexTextSecondary, fontWeight = FontWeight.Medium)
         }
 
+        // Betting lines — only when toggle ON and at least one field non-null
+        if (showBetting) {
+            BettingLinesBlock(score = score)
+        }
+
         // Channel info — "Ch 4.1 · NBC"
         val chParts = mutableListOf<String>()
         channel?.guideNumber?.takeIf { it.isNotBlank() }?.let { chParts.add("Ch $it") }
@@ -1940,6 +1950,87 @@ private fun SportsScorePanel(
         }
     }
 }
+
+/**
+ * Real betting lines from SportsDataIO — point spread, over/under, money line.
+ * Only the lines whose fields are non-null are shown; renders nothing if all are null.
+ * Negative spread = home team favored.
+ */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun BettingLinesBlock(score: GameScore) {
+    val spread = score.pointSpread
+    val ou = score.overUnder
+    val homeML = score.homeMoneyLine
+    val awayML = score.awayMoneyLine
+    val series = score.seriesInfo
+    val hasSeries = series != null && (series.homeWins != null || series.awayWins != null)
+    if (spread == null && ou == null && homeML == null && awayML == null && !hasSeries) return
+
+    val league = (score.league ?: "").lowercase()
+    val homeAbbr = TeamLogos.abbrev(league, score.homeTeam).ifBlank { "HOME" }
+    val awayAbbr = TeamLogos.abbrev(league, score.awayTeam).ifBlank { "AWAY" }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (spread != null) {
+            val spreadLine = when {
+                spread < 0 -> "$homeAbbr ${formatSpread(spread)}"
+                spread > 0 -> "$awayAbbr ${formatSpread(-spread)}"
+                else -> "PK"
+            }
+            Text(
+                spreadLine,
+                fontSize = 12.sp, color = PlexTextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        if (ou != null) {
+            Text(
+                "O/U ${formatOu(ou)}",
+                fontSize = 12.sp, color = PlexTextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        if (homeML != null || awayML != null) {
+            val parts = mutableListOf<String>()
+            homeML?.let { parts.add("$homeAbbr ${formatMoneyLine(it)}") }
+            awayML?.let { parts.add("$awayAbbr ${formatMoneyLine(it)}") }
+            Text(
+                "ML: ${parts.joinToString(" / ")}",
+                fontSize = 12.sp, color = PlexTextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        if (hasSeries) {
+            val hw = series!!.homeWins ?: 0
+            val aw = series.awayWins ?: 0
+            val gn = series.gameNumber
+            val ml = series.maxLength
+            val gameLabel = when {
+                gn != null && ml != null -> "Game $gn of $ml"
+                gn != null -> "Game $gn"
+                else -> null
+            }
+            val seriesLine = listOfNotNull(
+                "Series: $awayAbbr $aw–$homeAbbr $hw",
+                gameLabel
+            ).joinToString(" · ")
+            Text(
+                seriesLine,
+                fontSize = 12.sp, color = PlexTextTertiary,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+    }
+}
+
+private fun formatSpread(s: Double): String =
+    if (s == s.toInt().toDouble()) "${s.toInt()}" else "%.1f".format(s)
+
+private fun formatOu(o: Double): String =
+    if (o == o.toInt().toDouble()) "${o.toInt()}" else "%.1f".format(o)
+
+private fun formatMoneyLine(ml: Int): String = if (ml > 0) "+$ml" else "$ml"
 
 /**
  * Right-side overlay artwork for sports programs:

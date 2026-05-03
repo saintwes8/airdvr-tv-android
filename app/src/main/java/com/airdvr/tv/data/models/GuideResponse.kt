@@ -221,5 +221,17 @@ data class GameScore(
     @SerializedName("timeRemaining") val timeRemaining: String? = null,
     @SerializedName("startTime") val startTime: String? = null,
     @SerializedName("league") val league: String? = null,
-    @SerializedName("channel") val channel: String? = null
+    @SerializedName("channel") val channel: String? = null,
+    @SerializedName("pointSpread") val pointSpread: Double? = null,
+    @SerializedName("overUnder") val overUnder: Double? = null,
+    @SerializedName("homeMoneyLine") val homeMoneyLine: Int? = null,
+    @SerializedName("awayMoneyLine") val awayMoneyLine: Int? = null,
+    @SerializedName("seriesInfo") val seriesInfo: SeriesInfo? = null
+)
+
+data class SeriesInfo(
+    @SerializedName("homeWins") val homeWins: Int? = null,
+    @SerializedName("awayWins") val awayWins: Int? = null,
+    @SerializedName("gameNumber") val gameNumber: Int? = null,
+    @SerializedName("maxLength") val maxLength: Int? = null
 )
