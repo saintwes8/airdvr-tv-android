@@ -122,7 +122,8 @@ data class LiveTVUiState(
     val pipChannel: Channel? = null,
     val pipStreamUrl: String? = null,
     val pipFocused: Boolean = false,
-    val audioOnPip: Boolean = false,
+    val pipMuted: Boolean = false,
+    val audioOnFocus: Boolean = false,
     val pipPickerVisible: Boolean = false,
     val pipSize: PipSize = PipSize.MEDIUM,
     val pipPlacement: PipPlacement = PipPlacement.BOTTOM_RIGHT,
@@ -1055,29 +1056,53 @@ class LiveTVViewModel : ViewModel() {
             showToast("PiP requires 2+ tuners")
             return
         }
-        _uiState.value = s.copy(pipPickerVisible = true, focusedRow = 0)
+        val mainNum = s.currentChannel?.guideNumber
+        val startIdx = s.filteredChannels.indexOfFirst { it.guideNumber != mainNum }
+            .takeIf { it >= 0 } ?: 0
+        _uiState.value = s.copy(pipPickerVisible = true, focusedRow = startIdx)
     }
 
     fun closePipPicker() {
         _uiState.value = _uiState.value.copy(pipPickerVisible = false)
     }
 
-    /** Tune the PiP window to the given channel (independent of the main tuner). */
+    /** Tune the PiP window to the given channel (independent of the main tuner).
+     *  If the user picks the same channel as the main player, auto-pick the
+     *  next channel so we never burn a tuner on a duplicate stream. */
     fun setPipChannel(channel: Channel) {
-        if (channel.guideNumber.isNullOrBlank()) return
-        // Don't put the same channel as the main player into PiP — wastes a tuner.
-        if (channel.guideNumber == _uiState.value.currentChannel?.guideNumber) {
-            showToast("Already watching this channel")
+        val resolved = resolveDistinctPipChannel(channel) ?: run {
+            showToast("No other channel available for PiP")
             return
         }
+        if (resolved.guideNumber.isNullOrBlank()) return
         val quality = guidePrefsManager.quality.value
-        val url = streamRepo.getStreamUrl(channel.guideNumber, quality)
-        Log.d("PIP", "setPipChannel ch=${channel.guideNumber} ${channel.guideName} url=$url")
+        val url = streamRepo.getStreamUrl(resolved.guideNumber, quality)
+        Log.d("PIP", "setPipChannel ch=${resolved.guideNumber} ${resolved.guideName} url=$url")
         _uiState.value = _uiState.value.copy(
-            pipChannel = channel,
+            pipChannel = resolved,
             pipStreamUrl = url,
             pipPickerVisible = false
         )
+    }
+
+    /** Pick a channel for PiP that is NOT the same as the current main channel.
+     *  If the requested channel is the main channel, walk forward (then backward)
+     *  through the filtered list to find the nearest distinct channel. */
+    private fun resolveDistinctPipChannel(requested: Channel): Channel? {
+        val mainNum = _uiState.value.currentChannel?.guideNumber
+        if (requested.guideNumber != mainNum) return requested
+        val list = _uiState.value.filteredChannels
+        if (list.isEmpty()) return null
+        val idx = list.indexOfFirst { it.guideNumber == requested.guideNumber }
+        // Forward search
+        for (i in (idx + 1) until list.size) {
+            if (list[i].guideNumber != mainNum && !list[i].guideNumber.isNullOrBlank()) return list[i]
+        }
+        // Backward fallback
+        for (i in (idx - 1) downTo 0) {
+            if (list[i].guideNumber != mainNum && !list[i].guideNumber.isNullOrBlank()) return list[i]
+        }
+        return null
     }
 
     fun closePip() {
@@ -1085,7 +1110,8 @@ class LiveTVViewModel : ViewModel() {
             pipChannel = null,
             pipStreamUrl = null,
             pipFocused = false,
-            audioOnPip = false,
+            pipMuted = false,
+            audioOnFocus = false,
             pipOptionsMenuVisible = false,
             pipSwapConfirmVisible = false
         )
@@ -1181,8 +1207,12 @@ class LiveTVViewModel : ViewModel() {
         }
     }
 
-    fun togglePipAudio() {
-        _uiState.value = _uiState.value.copy(audioOnPip = !_uiState.value.audioOnPip)
+    fun togglePipMute() {
+        _uiState.value = _uiState.value.copy(pipMuted = !_uiState.value.pipMuted)
+    }
+
+    fun toggleAudioOnFocus() {
+        _uiState.value = _uiState.value.copy(audioOnFocus = !_uiState.value.audioOnFocus)
     }
 
     // ── Scorebug overlay ────────────────────────────────────────────────────

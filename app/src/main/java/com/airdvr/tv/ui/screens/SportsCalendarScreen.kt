@@ -637,20 +637,31 @@ private fun TodayGameCard(event: SportsEvent, onClick: () -> Unit) {
                     score?.seriesInfo?.let { s ->
                         val hw = s.homeWins ?: 0
                         val aw = s.awayWins ?: 0
-                        val winnerAbbr = when {
-                            isFinal && awayWon -> awayAbbr
-                            isFinal && homeWon -> homeAbbr
+                        val gameNum = s.gameNumber
+                        val seriesText: String? = when {
+                            // Final + clinched series: "BOS wins series 4-3"
+                            isFinal && (awayWon || homeWon) && (hw + aw) > 0 -> {
+                                val winnerAbbr = if (awayWon) awayAbbr else homeAbbr
+                                val high = maxOf(hw, aw); val low = minOf(hw, aw)
+                                "$winnerAbbr wins series $high-$low"
+                            }
+                            // Scheduled / in-progress with a series record:
+                            // "Game 7 · Series tied 3-3" or "Game 5 · BOS leads 3-1"
+                            !isFinal && (hw + aw) > 0 -> {
+                                val gamePart = gameNum?.let { "Game $it · " } ?: ""
+                                when {
+                                    hw == aw -> "${gamePart}Series tied $hw-$aw"
+                                    hw > aw -> "${gamePart}$homeAbbr leads $hw-$aw"
+                                    else -> "${gamePart}$awayAbbr leads $aw-$hw"
+                                }
+                            }
+                            !isFinal && gameNum != null -> "Game $gameNum"
                             else -> null
                         }
-                        val seriesText = if (winnerAbbr != null && (hw + aw) > 0) {
-                            val high = maxOf(hw, aw)
-                            val low = minOf(hw, aw)
-                            "$winnerAbbr wins series $high-$low"
-                        } else null
                         if (seriesText != null) {
                             Text(
                                 seriesText,
-                                fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f),
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -675,6 +686,9 @@ private fun TeamCellWithName(
     dim: Boolean
 ) {
     val alpha = if (dim) 0.45f else 1f
+    val displayName = fullName?.takeIf { it.isNotBlank() }
+        ?.let { TeamLogos.shortName(it).ifBlank { it } }
+        ?: abbreviation
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -684,14 +698,14 @@ private fun TeamCellWithName(
             AsyncImage(
                 model = logoUrl,
                 contentDescription = fullName ?: abbreviation,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(36.dp),
                 contentScale = ContentScale.Fit,
                 alpha = alpha
             )
         } else {
             Box(
                 modifier = Modifier
-                    .size(40.dp).clip(CircleShape)
+                    .size(36.dp).clip(CircleShape)
                     .background(Color.White.copy(alpha = 0.12f * alpha)),
                 contentAlignment = Alignment.Center
             ) {
@@ -699,10 +713,11 @@ private fun TeamCellWithName(
             }
         }
         Text(
-            fullName ?: abbreviation,
+            "$abbreviation $displayName".take(18),
             fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
             color = Color.White.copy(alpha = alpha),
-            maxLines = 1, overflow = TextOverflow.Ellipsis
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
         )
     }
 }

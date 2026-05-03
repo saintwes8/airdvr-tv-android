@@ -212,16 +212,22 @@ fun LiveTVScreen(
             .build()
         exoPlayers[0].trackSelectionParameters = params
     }
-    // Volume — accounts for PiP audio swap when PiP is enabled in fullscreen.
-    LaunchedEffect(uiState.activePaneIndex, uiState.mode, uiState.isMuted, uiState.audioOnPip, uiState.pipChannel) {
+    // Volume — PiP gets audio iff !pipMuted && audioOnFocus && pipFocused.
+    // Main keeps audio whenever PiP is silent. The main player's mediaItem and
+    // playWhenReady state are NEVER touched here — only `volume`.
+    LaunchedEffect(
+        uiState.activePaneIndex, uiState.mode, uiState.isMuted,
+        uiState.pipMuted, uiState.audioOnFocus, uiState.pipFocused, uiState.pipChannel
+    ) {
         if (uiState.mode == ScreenMode.MULTIVIEW) {
             exoPlayers.forEachIndexed { i, p -> p.volume = if (i == uiState.activePaneIndex && !uiState.isMuted) 1f else 0f }
             pipPlayer.volume = 0f
         } else {
             val muted = uiState.isMuted
-            val pipAudio = uiState.pipChannel != null && uiState.audioOnPip
+            val pipAudio = uiState.pipChannel != null &&
+                !uiState.pipMuted && uiState.audioOnFocus && uiState.pipFocused
             exoPlayers[0].volume = if (!muted && !pipAudio) 1f else 0f
-            pipPlayer.volume = if (!muted && pipAudio) 1f else 0f
+            pipPlayer.volume = if (pipAudio) 1f else 0f
         }
     }
     // PiP stream loader: load when URL changes; stop when cleared (releases tuner).
@@ -541,7 +547,7 @@ private fun handleFullscreenKey(
             KeyEvent.KEYCODE_DPAD_DOWN -> { vm.pipChannelDown(); true }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.openPipOptions(); true }
             KeyEvent.KEYCODE_BACK -> { vm.closePip(); true }
-            KeyEvent.KEYCODE_VOLUME_MUTE -> { vm.togglePipAudio(); true }
+            KeyEvent.KEYCODE_VOLUME_MUTE -> { vm.togglePipMute(); true }
             else -> false
         }
     }
@@ -569,7 +575,7 @@ private fun handleFullscreenKey(
         KeyEvent.KEYCODE_CHANNEL_UP -> { vm.channelUp(); true }
         KeyEvent.KEYCODE_CHANNEL_DOWN -> { vm.channelDown(); true }
         KeyEvent.KEYCODE_VOLUME_MUTE -> {
-            if (uiState.pipEnabled) { vm.togglePipAudio(); true } else false
+            if (uiState.pipEnabled) { vm.togglePipMute(); true } else false
         }
         KeyEvent.KEYCODE_BACK -> {
             when {
@@ -1126,10 +1132,11 @@ private fun FullscreenLayout(
                 PipPlacement.BOTTOM_LEFT -> PaddingValues(bottom = 64.dp, start = 24.dp)
                 PipPlacement.BOTTOM_RIGHT -> PaddingValues(bottom = 64.dp, end = 24.dp)
             }
+            val pipHasAudio = !uiState.pipMuted && uiState.audioOnFocus && uiState.pipFocused
             PipOverlay(
                 channel = uiState.pipChannel,
                 focused = uiState.pipFocused,
-                audioOnPip = uiState.audioOnPip,
+                pipHasAudio = pipHasAudio,
                 player = pipPlayer,
                 size = uiState.pipSize,
                 modifier = Modifier
@@ -1191,20 +1198,25 @@ private fun FullscreenLayout(
             PipChannelPicker(
                 channels = uiState.filteredChannels,
                 currentMain = uiState.currentChannel,
+                focusedIndex = uiState.focusedRow,
                 programsByChannel = uiState.programsByChannel,
                 onPick = { viewModel.setPipChannel(it) },
                 onCancel = { viewModel.closePipPicker() }
             )
         }
 
-        // PiP options menu — Size / Placement / Make Main / Close
+        // PiP options menu — Size / Placement / Audio / Make Main / Close
         if (uiState.pipOptionsMenuVisible && uiState.pipEnabled) {
             PipOptionsMenu(
                 pipChannel = uiState.pipChannel,
                 currentSize = uiState.pipSize,
                 currentPlacement = uiState.pipPlacement,
+                pipMuted = uiState.pipMuted,
+                audioOnFocus = uiState.audioOnFocus,
                 onSize = { viewModel.setPipSize(it) },
                 onPlacement = { viewModel.setPipPlacement(it) },
+                onToggleMute = { viewModel.togglePipMute() },
+                onToggleAudioOnFocus = { viewModel.toggleAudioOnFocus() },
                 onMakeMain = { viewModel.requestPipSwap() },
                 onClosePip = { viewModel.closePip() },
                 onDismiss = { viewModel.closePipOptions() }
@@ -2243,7 +2255,7 @@ private fun SportsArtwork(
 private fun PipOverlay(
     channel: Channel?,
     focused: Boolean,
-    audioOnPip: Boolean,
+    pipHasAudio: Boolean,
     player: ExoPlayer,
     size: PipSize = PipSize.MEDIUM,
     modifier: Modifier = Modifier
@@ -2255,9 +2267,9 @@ private fun PipOverlay(
             .clip(RoundedCornerShape(0.dp))
             .background(Color.Black)
             .border(
-                if (focused) 3.dp else 2.dp,
-                if (focused) PlexAccent else Color.White.copy(alpha = 0.2f),
-                RoundedCornerShape(0.dp)
+                width = 2.dp,
+                color = if (focused) PlexAccent else Color.White.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(0.dp)
             )
     ) {
         AndroidView(
@@ -2278,7 +2290,7 @@ private fun PipOverlay(
                 color = PlexTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold
             )
         }
-        // Audio indicator top-right
+        // Audio indicator top-right — reflects whether PiP currently has audio
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -2287,9 +2299,9 @@ private fun PipOverlay(
                 .padding(4.dp)
         ) {
             Icon(
-                if (audioOnPip) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
-                contentDescription = if (audioOnPip) "Audio on PiP" else "Audio on Main",
-                tint = if (audioOnPip) PlexAccent else PlexTextTertiary,
+                if (pipHasAudio) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                contentDescription = if (pipHasAudio) "Audio on PiP" else "Audio on Main",
+                tint = if (pipHasAudio) PlexAccent else PlexTextTertiary,
                 modifier = Modifier.size(14.dp)
             )
         }
@@ -2305,15 +2317,22 @@ private fun PipOverlay(
 private fun PipChannelPicker(
     channels: List<Channel>,
     currentMain: Channel?,
+    focusedIndex: Int,
     programsByChannel: Map<String, List<EpgProgram>>,
     onPick: (Channel) -> Unit,
     onCancel: () -> Unit
 ) {
     val nowSec = remember { System.currentTimeMillis() / 1000 }
-    val firstRowFocus = remember { FocusRequester() }
-    LaunchedEffect(channels.size) {
-        if (channels.isNotEmpty()) {
-            try { firstRowFocus.requestFocus() } catch (_: Exception) {}
+    val listState = rememberLazyListState()
+    // Scroll to the focused row whenever the parent's d-pad updates focusedIndex.
+    LaunchedEffect(focusedIndex) {
+        if (focusedIndex !in channels.indices) return@LaunchedEffect
+        val info = listState.layoutInfo
+        val visible = info.visibleItemsInfo
+        val first = visible.firstOrNull()?.index ?: 0
+        val last = visible.lastOrNull()?.index ?: 0
+        if (focusedIndex < first + 1 || focusedIndex > last - 1) {
+            listState.animateScrollToItem((focusedIndex - 2).coerceAtLeast(0))
         }
     }
     Box(
@@ -2340,8 +2359,6 @@ private fun PipChannelPicker(
                 fontSize = 12.sp, color = PlexTextTertiary
             )
             Spacer(Modifier.height(12.dp))
-            val listState = rememberLazyListState()
-            val coroutineScope = rememberCoroutineScope()
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -2351,120 +2368,89 @@ private fun PipChannelPicker(
             ) {
                 itemsIndexed(channels) { idx, ch ->
                     val isMain = ch.guideNumber == currentMain?.guideNumber
+                    val isFocused = idx == focusedIndex
                     val logoInfo = ChannelLogoRepository.getLogoInfo(ch.guideName ?: "")
                     val nowProgram = programsByChannel[ch.guideNumber ?: ""]?.firstOrNull {
                         it.startEpochSec <= nowSec && nowSec < it.endEpochSec
                     }
-                    var isFocused by remember { mutableStateOf(false) }
-                    val rowMod = (if (idx == 0) Modifier.focusRequester(firstRowFocus) else Modifier)
-                        .onFocusChanged {
-                            isFocused = it.isFocused
-                            if (it.isFocused) {
-                                coroutineScope.launch {
-                                    val info = listState.layoutInfo
-                                    val visible = info.visibleItemsInfo
-                                    val first = visible.firstOrNull()?.index ?: 0
-                                    val last = visible.lastOrNull()?.index ?: 0
-                                    if (idx <= first || idx >= last) {
-                                        listState.animateScrollToItem(
-                                            (idx - 2).coerceAtLeast(0)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    Surface(
-                        onClick = { if (!isMain) onPick(ch) },
-                        modifier = rowMod
+                    Row(
+                        modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
-                            .focusable(),
-                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
-                        colors = ClickableSurfaceDefaults.colors(
-                            containerColor = Color.Black,
-                            focusedContainerColor = Color(0xFF0E1A2B)
-                        ),
-                        border = ClickableSurfaceDefaults.border(
-                            border = androidx.tv.material3.Border.None,
-                            focusedBorder = androidx.tv.material3.Border.None
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                Modifier
-                                    .width(4.dp)
-                                    .fillMaxHeight()
-                                    .background(
-                                        when {
-                                            isFocused -> PlexAccent
-                                            isMain -> PlexAccent.copy(alpha = 0.4f)
-                                            else -> Color.Transparent
-                                        }
-                                    )
+                            .background(
+                                if (isFocused) Color(0xFF0E1A2B) else Color.Black
                             )
-                            Spacer(Modifier.width(12.dp))
-                            Box(
-                                Modifier.size(36.dp).background(Color(0xFF0A0A0A)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (!logoInfo?.logoUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = logoInfo!!.logoUrl,
-                                        contentDescription = ch.guideName,
-                                        modifier = Modifier.size(32.dp),
-                                        contentScale = ContentScale.Fit
-                                    )
-                                } else {
-                                    Text(
-                                        (ch.guideName ?: "").take(2).uppercase(),
-                                        fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.Center
-                            ) {
-                                // Line 1 — show title, bold + larger
-                                val titleLine = nowProgram?.title?.takeIf { it.isNotBlank() }
-                                    ?: ch.guideName ?: ""
+                            .clickable(enabled = !isMain) { onPick(ch) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            Modifier
+                                .width(if (isFocused) 3.dp else 0.dp)
+                                .fillMaxHeight()
+                                .background(
+                                    when {
+                                        isFocused -> PlexAccent
+                                        isMain -> PlexAccent.copy(alpha = 0.4f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                        )
+                        Spacer(Modifier.width(if (isFocused) 12.dp else 15.dp))
+                        Box(
+                            Modifier.size(36.dp).background(Color(0xFF0A0A0A)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!logoInfo?.logoUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = logoInfo!!.logoUrl,
+                                    contentDescription = ch.guideName,
+                                    modifier = Modifier.size(32.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
                                 Text(
-                                    titleLine,
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isMain) PlexTextTertiary else Color.White,
+                                    (ch.guideName ?: "").take(2).uppercase(),
+                                    fontSize = 10.sp, fontWeight = FontWeight.Bold, color = PlexTextSecondary
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            val titleLine = nowProgram?.title?.takeIf { it.isNotBlank() }
+                                ?: ch.guideName ?: ""
+                            Text(
+                                titleLine,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isMain) PlexTextTertiary else Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            val chLabel = listOfNotNull(
+                                ch.guideNumber?.takeIf { it.isNotBlank() },
+                                ch.guideName?.takeIf { it.isNotBlank() }
+                            ).joinToString(" ")
+                            if (chLabel.isNotBlank()) {
+                                Text(
+                                    chLabel,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = PlexTextTertiary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                // Line 2 — channel # + network, muted
-                                val chLabel = listOfNotNull(
-                                    ch.guideNumber?.takeIf { it.isNotBlank() },
-                                    ch.guideName?.takeIf { it.isNotBlank() }
-                                ).joinToString(" ")
-                                if (chLabel.isNotBlank()) {
-                                    Text(
-                                        chLabel,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color = PlexTextTertiary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
                             }
-                            if (isMain) {
-                                Text(
-                                    "ON MAIN",
-                                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
-                                    color = PlexTextTertiary,
-                                    modifier = Modifier
-                                        .padding(end = 12.dp)
-                                )
-                            }
+                        }
+                        if (isMain) {
+                            Text(
+                                "ON MAIN",
+                                fontSize = 9.sp, fontWeight = FontWeight.Bold,
+                                color = PlexTextTertiary,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
                         }
                     }
                 }
@@ -2483,8 +2469,12 @@ private fun PipOptionsMenu(
     pipChannel: Channel?,
     currentSize: PipSize,
     currentPlacement: PipPlacement,
+    pipMuted: Boolean,
+    audioOnFocus: Boolean,
     onSize: (PipSize) -> Unit,
     onPlacement: (PipPlacement) -> Unit,
+    onToggleMute: () -> Unit,
+    onToggleAudioOnFocus: () -> Unit,
     onMakeMain: () -> Unit,
     onClosePip: () -> Unit,
     onDismiss: () -> Unit
@@ -2547,6 +2537,29 @@ private fun PipOptionsMenu(
                     onClick = { onPlacement(p) }
                 )
             }
+            Spacer(Modifier.height(6.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(PlexBorder)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Audio",
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PlexTextTertiary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            PipMenuRow(
+                label = if (pipMuted) "🔊 Unmute" else "🔇 Mute",
+                selected = pipMuted,
+                onClick = onToggleMute
+            )
+            PipMenuRow(
+                label = "🎧 Audio on focus",
+                selected = audioOnFocus,
+                onClick = onToggleAudioOnFocus
+            )
             Spacer(Modifier.height(6.dp))
             Box(
                 Modifier
