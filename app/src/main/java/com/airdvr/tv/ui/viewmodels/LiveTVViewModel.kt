@@ -1102,11 +1102,45 @@ class LiveTVViewModel : ViewModel() {
     fun openGamePicker() {
         viewModelScope.launch {
             val games = fetchAllGames()
+            val filtered = filterPickerGames(games)
             _uiState.value = _uiState.value.copy(
                 gamePickerVisible = true,
-                availableGames = games
+                availableGames = filtered
             )
         }
+    }
+
+    /**
+     * Filter the game list shown in the picker:
+     *  - Keep games currently in progress
+     *  - Keep games scheduled to start within the next 12 hours
+     *  - Drop final/postponed/canceled/etc.
+     * Sort: in-progress first, then by start time ascending.
+     */
+    private fun filterPickerGames(games: List<GameScore>): List<GameScore> {
+        val now = System.currentTimeMillis() / 1000L
+        val window = 12 * 60 * 60L
+        return games.filter { g ->
+            val s = (g.status ?: "").lowercase().replace(" ", "")
+            val inProgress = s.contains("progress") || s.contains("live")
+            val scheduled = s.contains("scheduled")
+            when {
+                inProgress -> true
+                scheduled -> {
+                    val start = parseIsoToEpochSec(g.startTime)
+                    start in now..(now + window)
+                }
+                else -> false
+            }
+        }.sortedWith(
+            compareBy(
+                { g ->
+                    val s = (g.status ?: "").lowercase().replace(" ", "")
+                    if (s.contains("progress") || s.contains("live")) 0 else 1
+                },
+                { g -> parseIsoToEpochSec(g.startTime) }
+            )
+        )
     }
 
     fun closeGamePicker() {
@@ -1184,6 +1218,13 @@ class LiveTVViewModel : ViewModel() {
         if (keys.isEmpty()) return
         val games = fetchAllGames()
         val matched = games.filter { gameKey(it) in keys }
+        Log.d("SCOREBUG", "Polling scores, found ${games.size} games (${matched.size} tracked)")
+        matched.forEach { g ->
+            Log.d(
+                "SCOREBUG",
+                "Score update: ${g.awayTeam} ${g.awayScore ?: "-"} - ${g.homeScore ?: "-"} ${g.homeTeam} [${g.status} ${g.quarter ?: ""} ${g.timeRemaining ?: ""}]"
+            )
+        }
         _uiState.value = _uiState.value.copy(scorebugGames = matched)
     }
 
