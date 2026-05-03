@@ -205,7 +205,7 @@ fun SportsCalendarScreen(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 32.dp)
-                    .background(PlexCard, RoundedCornerShape(8.dp))
+                    .background(PlexCard, RoundedCornerShape(0.dp))
                     .padding(horizontal = 20.dp, vertical = 10.dp)
             ) {
                 Text(msg, fontSize = 14.sp, color = PlexTextPrimary)
@@ -307,7 +307,7 @@ private fun LeagueFilterRow(selected: String, onSelect: (String) -> Unit) {
 private fun LeagueChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (isSelected) PlexAccent else PlexCard,
             focusedContainerColor = if (isSelected) PlexAccent else PlexSurface
@@ -362,7 +362,7 @@ private fun DaySectionRow(
         // Header (focusable, click to expand/collapse)
         Surface(
             onClick = onToggle,
-            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(6.dp)),
+            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
             colors = ClickableSurfaceDefaults.colors(
                 containerColor = Color.Transparent,
                 focusedContainerColor = PlexCard
@@ -441,7 +441,7 @@ private fun GameCard(
                     onLongPress(); true
                 } else false
             },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard,
             focusedContainerColor = PlexCard
@@ -457,7 +457,7 @@ private fun GameCard(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
-                    .background(leagueColor, RoundedCornerShape(4.dp))
+                    .background(leagueColor, RoundedCornerShape(0.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
@@ -554,7 +554,7 @@ private fun GameCard(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 26.dp)
-                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(0.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
@@ -639,7 +639,7 @@ private fun LiveBadge(modifier: Modifier = Modifier) {
     )
     Row(
         modifier = modifier
-            .background(Color(0xFFEF4444), RoundedCornerShape(4.dp))
+            .background(Color(0xFFEF4444), RoundedCornerShape(0.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)

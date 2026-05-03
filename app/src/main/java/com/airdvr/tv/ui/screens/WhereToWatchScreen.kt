@@ -97,7 +97,7 @@ fun WhereToWatchScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                 textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(0.dp)
             )
 
             Spacer(Modifier.height(16.dp))
@@ -199,7 +199,7 @@ private fun PopularPosterCard(item: SearchResult, onClick: () -> Unit) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(containerColor = PlexCard, focusedContainerColor = PlexCard),
         border = CardDefaults.border(
             border = Border(border = androidx.compose.foundation.BorderStroke(1.dp, PlexBorder)),
@@ -211,7 +211,7 @@ private fun PopularPosterCard(item: SearchResult, onClick: () -> Unit) {
                 AsyncImage(
                     model = item.poster,
                     contentDescription = item.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else {
@@ -288,7 +288,7 @@ private fun DetailOverlay(
                         contentDescription = result.title,
                         modifier = Modifier
                             .width(220.dp).height(330.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(0.dp))
                             .background(PlexCard),
                         contentScale = ContentScale.Crop
                     )
@@ -391,8 +391,8 @@ private fun ProviderSection(label: String, providers: List<Provider>) {
 private fun ProviderChip(provider: Provider) {
     Row(
         modifier = Modifier
-            .background(PlexCard, RoundedCornerShape(8.dp))
-            .border(1.dp, PlexBorder, RoundedCornerShape(8.dp))
+            .background(PlexCard, RoundedCornerShape(0.dp))
+            .border(1.dp, PlexBorder, RoundedCornerShape(0.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -401,7 +401,7 @@ private fun ProviderChip(provider: Provider) {
             AsyncImage(
                 model = provider.logo,
                 contentDescription = provider.name,
-                modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)),
+                modifier = Modifier.size(24.dp).clip(RoundedCornerShape(0.dp)),
                 contentScale = ContentScale.Fit
             )
         }

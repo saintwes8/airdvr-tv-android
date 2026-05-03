@@ -307,7 +307,7 @@ private fun ChannelCard(
             .height(130.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = PlexCard,
             focusedContainerColor = PlexCard
@@ -384,7 +384,7 @@ private fun ChannelCard(
                 ) {
                     if (!program?.category.isNullOrBlank()) {
                         Box(
-                            Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(3.dp))
+                            Modifier.background(PlexSurface.copy(alpha = 0.85f), RoundedCornerShape(0.dp))
                                 .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
                             Text(program?.category ?: "", fontSize = 12.sp, color = PlexTextSecondary)
@@ -419,7 +419,7 @@ private fun RecordingPosterCard(recording: Recording, onClick: () -> Unit) {
             .height(210.dp)
             .scale(scale)
             .onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = PlexSurface,
             focusedContainerColor = PlexSurface
@@ -566,7 +566,7 @@ private fun NavRailIcon(
             .padding(vertical = 4.dp)
             .size(width = 48.dp, height = 40.dp)
             .onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (isActive) PlexCard else Color.Transparent,
             focusedContainerColor = PlexCard
@@ -621,7 +621,7 @@ private fun ShimmerContent() {
             modifier = Modifier
                 .padding(horizontal = 24.dp)
                 .width(120.dp).height(20.dp)
-                .clip(RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(0.dp))
                 .background(PlexCard.copy(alpha = alpha))
         )
         Row(
@@ -632,7 +632,7 @@ private fun ShimmerContent() {
                 Box(
                     modifier = Modifier
                         .width(220.dp).height(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(PlexCard.copy(alpha = alpha))
                 )
             }

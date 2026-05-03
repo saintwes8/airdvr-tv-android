@@ -226,7 +226,7 @@ fun RecordingsScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 32.dp)
-                        .background(PlexCard, RoundedCornerShape(8.dp))
+                        .background(PlexCard, RoundedCornerShape(0.dp))
                         .padding(horizontal = 20.dp, vertical = 10.dp)
                 ) {
                     Text(uiState.toastMessage ?: "", fontSize = 14.sp, color = PlexTextPrimary)
@@ -475,8 +475,8 @@ private fun StorageWarningBanner(warning: StorageWarning) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .background(bg, RoundedCornerShape(6.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(6.dp))
+            .background(bg, RoundedCornerShape(0.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(0.dp))
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -499,7 +499,7 @@ private fun StorageWarningBanner(warning: StorageWarning) {
 private fun TabPill(label: String, isSelected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(20.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (isSelected) PlexTextPrimary else PlexCard,
             focusedContainerColor = if (isSelected) PlexTextPrimary else PlexSurface
@@ -533,7 +533,7 @@ private fun TabPill(label: String, isSelected: Boolean, onClick: () -> Unit) {
 private fun FilterChip(label: String, isSelected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(14.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (isSelected) PlexCard else Color.Transparent,
             focusedContainerColor = PlexCard
@@ -584,7 +584,7 @@ private fun ScheduleCard(
                     onCancel(); true
                 } else false
             },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard,
             focusedContainerColor = PlexCard
@@ -638,8 +638,8 @@ private fun ScheduleCard(
             } else {
                 Box(
                     Modifier
-                        .background(Color(0xFFF59E0B).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.15f), RoundedCornerShape(0.dp))
+                        .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f), RoundedCornerShape(0.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text("Scheduled", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Color(0xFFF59E0B))
@@ -689,7 +689,7 @@ private fun ShowGroupCard(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(2f / 3f),
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard.copy(alpha = 0.80f),
             focusedContainerColor = PlexCard
@@ -703,20 +703,20 @@ private fun ShowGroupCard(
             if (isGenericSports) {
                 com.airdvr.tv.ui.components.SportsTitleArtwork(
                     title = group.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))
                 )
             } else if (!posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = posterUrl,
                     contentDescription = group.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else if (!group.posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = group.posterUrl,
                     contentDescription = group.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Crop
                 )
             }
@@ -725,7 +725,7 @@ private fun ShowGroupCard(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 6.dp, end = 6.dp)
-                    .background(Color(0xFF1A6EBD).copy(alpha = 0.9f), RoundedCornerShape(4.dp))
+                    .background(Color(0xFF1A6EBD).copy(alpha = 0.9f), RoundedCornerShape(0.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text("$episodeCount", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -864,7 +864,7 @@ private fun RecordingPosterCard(
                     onLongPress(); true
                 } else false
             },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard.copy(alpha = 0.80f),
             focusedContainerColor = PlexCard
@@ -879,20 +879,20 @@ private fun RecordingPosterCard(
             if (isGenericSports) {
                 com.airdvr.tv.ui.components.SportsTitleArtwork(
                     title = recording.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp))
                 )
             } else if (!posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = posterUrl,
                     contentDescription = recording.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else if (!recording.posterUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = recording.posterUrl,
                     contentDescription = recording.title,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Crop
                 )
             }
@@ -985,7 +985,7 @@ private fun StorageBadge(isCloud: Boolean, modifier: Modifier = Modifier) {
     val icon = if (isCloud) Icons.Filled.Cloud else Icons.Filled.Storage
     Row(
         modifier = modifier
-            .background(bg, RoundedCornerShape(4.dp))
+            .background(bg, RoundedCornerShape(0.dp))
             .padding(horizontal = 5.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp)
@@ -1120,7 +1120,7 @@ private fun RecordingsShimmer() {
             Box(
                 modifier = Modifier
                     .width(140.dp).height(210.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(0.dp))
                     .background(PlexCard.copy(alpha = alpha))
             )
         }

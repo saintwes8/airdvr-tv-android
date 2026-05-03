@@ -38,7 +38,7 @@ fun RecordingCard(
             .width(140.dp)
             .height(210.dp)
             .onFocusChanged { isFocused = it.isFocused },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard.copy(alpha = 0.80f),
             focusedContainerColor = PlexBorder.copy(alpha = 0.95f)

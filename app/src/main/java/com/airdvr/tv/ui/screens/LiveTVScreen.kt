@@ -307,7 +307,7 @@ fun LiveTVScreen(
                 }
                 Box(
                     Modifier.align(Alignment.TopCenter).padding(top = 48.dp)
-                        .background(PlexCard.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                        .background(PlexCard.copy(alpha = 0.9f), RoundedCornerShape(0.dp))
                         .padding(horizontal = 24.dp, vertical = 10.dp)
                 ) {
                     Text("Guide data loading...", color = PlexTextSecondary, fontSize = 14.sp)
@@ -324,7 +324,7 @@ fun LiveTVScreen(
         // Toast
         uiState.toastMessage?.let { msg ->
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Box(Modifier.background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(8.dp)).padding(horizontal = 24.dp, vertical = 12.dp)) {
+                Box(Modifier.background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(0.dp)).padding(horizontal = 24.dp, vertical = 12.dp)) {
                     Text(msg, color = PlexTextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                 }
             }
@@ -657,7 +657,7 @@ private fun GuideLayout(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 12.dp, end = 16.dp)
-                    .background(Color.Black.copy(alpha = 0.60f), RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.60f), RoundedCornerShape(0.dp))
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -697,16 +697,16 @@ private fun LeftInfoPanel(
                 Box(
                     modifier = Modifier
                         .size(width = 120.dp, height = 180.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(PlexCard)
-                        .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
+                        .border(1.dp, PlexBorder, RoundedCornerShape(0.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     if (!posterUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = posterUrl,
                             contentDescription = focusedProgram?.title,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                             contentScale = ContentScale.Fit
                         )
                     } else {
@@ -803,7 +803,7 @@ private fun CategoryTabs(
                     Spacer(Modifier.height(3.dp))
                     Box(
                         Modifier.width(28.dp).height(2.dp)
-                            .background(if (isFocused) PlexAccent else PlexTextPrimary, RoundedCornerShape(1.dp))
+                            .background(if (isFocused) PlexAccent else PlexTextPrimary, RoundedCornerShape(0.dp))
                     )
                 }
             }
@@ -927,8 +927,8 @@ private fun GuideRow(
                 Box(
                     Modifier.fillMaxSize().padding(1.dp)
                         .clipToBounds()
-                        .background(guideCellBg, RoundedCornerShape(4.dp))
-                        .border(0.5.dp, PlexBorder, RoundedCornerShape(4.dp)),
+                        .background(guideCellBg, RoundedCornerShape(0.dp))
+                        .border(0.5.dp, PlexBorder, RoundedCornerShape(0.dp)),
                     contentAlignment = Alignment.CenterStart
                 ) { Text("No data", color = PlexTextTertiary, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp)) }
             } else {
@@ -952,12 +952,12 @@ private fun GuideRow(
                             .scale(scale)
                             .background(
                                 guideCellBg,
-                                RoundedCornerShape(4.dp)
+                                RoundedCornerShape(0.dp)
                             )
                             .border(
                                 if (isFocused) 2.dp else 0.5.dp,
                                 if (isFocused) PlexTextPrimary else PlexBorder,
-                                RoundedCornerShape(4.dp)
+                                RoundedCornerShape(0.dp)
                             )
                     ) {
                         // Currently airing accent bar
@@ -1139,6 +1139,7 @@ private fun FullscreenLayout(
             PipChannelPicker(
                 channels = uiState.filteredChannels,
                 currentMain = uiState.currentChannel,
+                programsByChannel = uiState.programsByChannel,
                 onPick = { viewModel.setPipChannel(it) },
                 onCancel = { viewModel.closePipPicker() }
             )
@@ -1191,7 +1192,7 @@ private fun SlimNowPlayingBar(
                 AsyncImage(
                     model = logoInfo!!.logoUrl,
                     contentDescription = channel.guideName,
-                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(3.dp)),
+                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(0.dp)),
                     contentScale = ContentScale.Fit
                 )
             }
@@ -1343,9 +1344,9 @@ private fun FullscreenActionOverlay(
                     modifier = Modifier
                         .width(140.dp)
                         .fillMaxHeight()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(0.dp))
                         .background(PlexCard)
-                        .border(1.dp, PlexBorder, RoundedCornerShape(8.dp)),
+                        .border(1.dp, PlexBorder, RoundedCornerShape(0.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     val isGenericSports = program != null && isGenericSportsTitle(program.title)
@@ -1368,7 +1369,7 @@ private fun FullscreenActionOverlay(
                             AsyncImage(
                                 model = posterUrl,
                                 contentDescription = program?.title,
-                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)),
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
                                 contentScale = ContentScale.Crop
                             )
                         } else if (!logoInfo?.logoUrl.isNullOrBlank()) {
@@ -1401,8 +1402,8 @@ private fun StreamModeBadge(mode: com.airdvr.tv.data.stream.StreamMode) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier
-            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-            .border(0.5.dp, PlexBorder, RoundedCornerShape(12.dp))
+            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(0.dp))
+            .border(0.5.dp, PlexBorder, RoundedCornerShape(0.dp))
             .padding(horizontal = 10.dp, vertical = 5.dp)
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
@@ -1422,12 +1423,12 @@ private fun OverlayActionBtn(icon: ImageVector, label: String, isSelected: Boole
         modifier = Modifier
             .background(
                 if (isSelected) PlexCard else Color.Transparent,
-                RoundedCornerShape(8.dp)
+                RoundedCornerShape(0.dp)
             )
             .border(
                 if (isSelected) 2.dp else 0.dp,
                 if (isSelected) PlexTextPrimary else Color.Transparent,
-                RoundedCornerShape(8.dp)
+                RoundedCornerShape(0.dp)
             )
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
@@ -1565,7 +1566,7 @@ private fun MultiViewPane(
             }
             Box(
                 Modifier.align(Alignment.TopStart).padding(6.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(0.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text("${pane.channel.guideNumber ?: ""} ${pane.channel.guideName ?: ""}", color = PlexTextPrimary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
@@ -1717,7 +1718,7 @@ private fun NavRailIcon(
             .padding(vertical = 4.dp)
             .size(width = 48.dp, height = 40.dp)
             .onFocusChanged { focused = it.isFocused },
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (highlight || isActive) PlexCard else Color.Transparent,
             focusedContainerColor = PlexCard
@@ -1755,12 +1756,12 @@ private fun StorageChip(label: String, isSelected: Boolean, onClick: () -> Unit)
         modifier = Modifier
             .background(
                 if (isSelected) PlexAccent.copy(alpha = 0.2f) else PlexSurface,
-                RoundedCornerShape(6.dp)
+                RoundedCornerShape(0.dp)
             )
             .border(
                 1.dp,
                 if (isSelected) PlexAccent else PlexBorder,
-                RoundedCornerShape(6.dp)
+                RoundedCornerShape(0.dp)
             )
             .clickable { onClick() }
             .padding(horizontal = 14.dp, vertical = 6.dp)
@@ -1792,8 +1793,8 @@ private fun RecordStorageIndicator(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(PlexSurface, RoundedCornerShape(6.dp))
-            .border(0.5.dp, PlexBorder, RoundedCornerShape(6.dp))
+            .background(PlexSurface, RoundedCornerShape(0.dp))
+            .border(0.5.dp, PlexBorder, RoundedCornerShape(0.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -1802,7 +1803,7 @@ private fun RecordStorageIndicator(
                 Modifier
                     .background(
                         if (isCloud) Color(0xFF22C55E).copy(alpha = 0.85f) else Color(0xFF6B7280).copy(alpha = 0.85f),
-                        RoundedCornerShape(3.dp)
+                        RoundedCornerShape(0.dp)
                     )
                     .padding(horizontal = 5.dp, vertical = 1.dp)
             ) {
@@ -1825,8 +1826,8 @@ private fun RecordStorageIndicator(
         } else {
             Box(
                 modifier = Modifier
-                    .background(Color.Transparent, RoundedCornerShape(4.dp))
-                    .border(0.5.dp, PlexBorder, RoundedCornerShape(4.dp))
+                    .background(Color.Transparent, RoundedCornerShape(0.dp))
+                    .border(0.5.dp, PlexBorder, RoundedCornerShape(0.dp))
                     .clickable { onToggle(next) }
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
@@ -2021,12 +2022,12 @@ private fun PipOverlay(
     Box(
         modifier = modifier
             .size(width = 320.dp, height = 180.dp)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(0.dp))
             .background(Color.Black)
             .border(
                 if (focused) 3.dp else 2.dp,
                 if (focused) PlexAccent else Color.White.copy(alpha = 0.2f),
-                RoundedCornerShape(6.dp)
+                RoundedCornerShape(0.dp)
             )
     ) {
         AndroidView(
@@ -2039,7 +2040,7 @@ private fun PipOverlay(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(6.dp)
-                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(0.dp))
                 .padding(horizontal = 8.dp, vertical = 3.dp)
         ) {
             Text(
@@ -2074,27 +2075,34 @@ private fun PipOverlay(
 private fun PipChannelPicker(
     channels: List<Channel>,
     currentMain: Channel?,
+    programsByChannel: Map<String, List<EpgProgram>>,
     onPick: (Channel) -> Unit,
     onCancel: () -> Unit
 ) {
+    val nowSec = remember { System.currentTimeMillis() / 1000 }
+    val firstRowFocus = remember { FocusRequester() }
+    LaunchedEffect(channels.size) {
+        if (channels.isNotEmpty()) {
+            try { firstRowFocus.requestFocus() } catch (_: Exception) {}
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
+            .background(Color.Black)
             .clickable(onClick = onCancel),
         contentAlignment = Alignment.Center
     ) {
         Column(
             modifier = Modifier
                 .width(560.dp)
-                .fillMaxHeight(0.75f)
-                .background(PlexCard, RoundedCornerShape(12.dp))
-                .border(1.dp, PlexBorder, RoundedCornerShape(12.dp))
-                .padding(20.dp)
+                .heightIn(max = 480.dp)
+                .background(Color.Black)
+                .padding(horizontal = 20.dp, vertical = 16.dp)
         ) {
             Text(
                 "Pick a channel for PiP",
-                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+                fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White
             )
             Spacer(Modifier.height(4.dp))
             Text(
@@ -2103,40 +2111,59 @@ private fun PipChannelPicker(
             )
             Spacer(Modifier.height(12.dp))
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                verticalArrangement = Arrangement.spacedBy(0.dp)
             ) {
-                itemsIndexed(channels) { _, ch ->
+                itemsIndexed(channels) { idx, ch ->
                     val isMain = ch.guideNumber == currentMain?.guideNumber
                     val logoInfo = ChannelLogoRepository.getLogoInfo(ch.guideName ?: "")
+                    val nowProgram = programsByChannel[ch.guideNumber ?: ""]?.firstOrNull {
+                        it.startEpochSec <= nowSec && nowSec < it.endEpochSec
+                    }
+                    var isFocused by remember { mutableStateOf(false) }
+                    val rowMod = (if (idx == 0) Modifier.focusRequester(firstRowFocus) else Modifier)
+                        .onFocusChanged { isFocused = it.isFocused }
                     Surface(
                         onClick = { if (!isMain) onPick(ch) },
-                        modifier = Modifier.fillMaxWidth().height(44.dp),
-                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(6.dp)),
+                        modifier = rowMod.fillMaxWidth().height(56.dp),
+                        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
                         colors = ClickableSurfaceDefaults.colors(
-                            containerColor = if (isMain) Color.Transparent else PlexSurface,
-                            focusedContainerColor = PlexAccent.copy(alpha = 0.25f)
+                            containerColor = Color.Black,
+                            focusedContainerColor = Color(0xFF0E1A2B)
                         ),
                         border = ClickableSurfaceDefaults.border(
-                            focusedBorder = androidx.tv.material3.Border(
-                                border = androidx.compose.foundation.BorderStroke(2.dp, PlexAccent)
-                            )
+                            border = androidx.tv.material3.Border.None,
+                            focusedBorder = androidx.tv.material3.Border.None
                         )
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
-                                Modifier.size(28.dp).clip(CircleShape).background(PlexBg),
+                                Modifier
+                                    .width(4.dp)
+                                    .fillMaxHeight()
+                                    .background(
+                                        when {
+                                            isFocused -> PlexAccent
+                                            isMain -> PlexAccent.copy(alpha = 0.4f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Box(
+                                Modifier.size(32.dp).background(Color(0xFF0A0A0A)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (!logoInfo?.logoUrl.isNullOrBlank()) {
                                     AsyncImage(
                                         model = logoInfo!!.logoUrl,
                                         contentDescription = ch.guideName,
-                                        modifier = Modifier.size(22.dp).clip(CircleShape),
+                                        modifier = Modifier.size(28.dp),
                                         contentScale = ContentScale.Fit
                                     )
                                 } else {
@@ -2146,26 +2173,36 @@ private fun PipChannelPicker(
                                     )
                                 }
                             }
-                            Text(
-                                ch.guideNumber ?: "",
-                                fontSize = 13.sp, fontWeight = FontWeight.Bold,
-                                color = PlexTextPrimary, modifier = Modifier.width(48.dp)
-                            )
-                            Text(
-                                ch.guideName ?: "",
-                                fontSize = 13.sp,
-                                color = if (isMain) PlexTextTertiary else PlexTextSecondary,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    "${ch.guideNumber ?: ""} ${ch.guideName ?: ""}".trim(),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isMain) PlexTextTertiary else Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (!nowProgram?.title.isNullOrBlank()) {
+                                    Text(
+                                        nowProgram!!.title!!,
+                                        fontSize = 11.sp,
+                                        color = PlexTextTertiary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                             if (isMain) {
                                 Text(
-                                    "On Main",
-                                    fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                                    "ON MAIN",
+                                    fontSize = 9.sp, fontWeight = FontWeight.Bold,
                                     color = PlexTextTertiary,
                                     modifier = Modifier
-                                        .background(PlexBg, RoundedCornerShape(3.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        .padding(end = 12.dp)
                                 )
                             }
                         }
@@ -2299,7 +2336,7 @@ private fun LeagueFilterTab(
     Surface(
         onClick = onClick,
         modifier = Modifier.height(36.dp),
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(18.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (selected) pillColor else Color(0xFF1A1A1A),
             focusedContainerColor = if (selected) pillColor else Color(0xFF2A2A2A)
@@ -2370,7 +2407,7 @@ private fun GamePickerCard(
     Surface(
         onClick = onPick,
         modifier = modifier.fillMaxWidth().height(108.dp),
-        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(10.dp)),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
             focusedContainerColor = Color.Transparent
@@ -2396,7 +2433,7 @@ private fun GamePickerCard(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .background(pillColor, RoundedCornerShape(4.dp))
+                    .background(pillColor, RoundedCornerShape(0.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(

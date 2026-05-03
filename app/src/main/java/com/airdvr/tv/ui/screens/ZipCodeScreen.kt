@@ -77,7 +77,7 @@ fun ZipCodeScreen(
                     viewModel.submit()
                 }),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(0.dp),
                 textStyle = LocalTextStyle.current.copy(
                     color = TextW, fontSize = 18.sp, textAlign = TextAlign.Center
                 ),
@@ -96,7 +96,7 @@ fun ZipCodeScreen(
                 onClick = { viewModel.submit() },
                 enabled = !uiState.isLoading && uiState.zipCode.length == 5,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(0.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     containerColor = BtnBg, contentColor = TextW
                 ),

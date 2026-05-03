@@ -80,7 +80,7 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
                 keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(0.dp),
                 textStyle = LocalTextStyle.current.copy(color = TextW, fontSize = 16.sp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = TextW.copy(alpha = 0.4f),
@@ -102,7 +102,7 @@ fun LoginScreen(
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); doLogin() }),
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(0.dp),
                 textStyle = LocalTextStyle.current.copy(color = TextW, fontSize = 16.sp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = TextW.copy(alpha = 0.4f),
@@ -120,7 +120,7 @@ fun LoginScreen(
                 onClick = { doLogin() },
                 enabled = !isLoading,
                 modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(0.dp),
                 colors = ButtonDefaults.outlinedButtonColors(containerColor = BtnBg, contentColor = TextW),
                 border = androidx.compose.foundation.BorderStroke(1.dp, FieldBorder)
             ) {

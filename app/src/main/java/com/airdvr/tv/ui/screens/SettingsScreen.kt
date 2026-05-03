@@ -358,7 +358,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 32.dp)
-                .background(PlexCard, RoundedCornerShape(8.dp))
+                .background(PlexCard, RoundedCornerShape(0.dp))
                 .padding(horizontal = 20.dp, vertical = 10.dp)
         ) {
             Text(uiState.toastMessage ?: "", fontSize = 14.sp, color = PlexTextPrimary)
@@ -542,7 +542,7 @@ private fun CloudUsageRow(used: Long, total: Long, percent: Float) {
         Spacer(Modifier.height(8.dp))
         LinearProgressIndicator(
             progress = { pct },
-            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+            modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(0.dp)),
             color = barColor,
             trackColor = PlexBorder
         )
@@ -603,7 +603,7 @@ private fun ZipCodeDialog(
                 ),
                 keyboardActions = KeyboardActions(onDone = { if (zip.length == 5) onSave(zip) }),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(0.dp),
                 textStyle = LocalTextStyle.current.copy(color = PlexTextPrimary, fontSize = 16.sp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = PlexTextPrimary.copy(alpha = 0.4f),

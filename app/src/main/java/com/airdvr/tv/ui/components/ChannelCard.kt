@@ -34,7 +34,7 @@ fun ChannelCard(
             .width(200.dp)
             .height(112.dp)
             .onFocusChanged { isFocused = it.isFocused },
-        shape = CardDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        shape = CardDefaults.shape(shape = RoundedCornerShape(0.dp)),
         colors = CardDefaults.colors(
             containerColor = PlexCard.copy(alpha = 0.80f),
             focusedContainerColor = PlexBorder.copy(alpha = 0.95f)
