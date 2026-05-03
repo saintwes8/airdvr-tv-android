@@ -79,6 +79,20 @@ object TeamLogos {
         return "https://a.espncdn.com/i/teamlogos/$league/500/$abbrev.png"
     }
 
+    /** True when a team table for the given league contains a name that matches [teamName]. */
+    fun hasTeam(league: String, teamName: String?): Boolean {
+        if (teamName.isNullOrBlank()) return false
+        val key = teamName.trim().lowercase()
+        val table = when (league) {
+            "nfl" -> nfl
+            "nba" -> nba
+            "mlb" -> mlb
+            "nhl" -> nhl
+            else -> return false
+        }
+        return table.containsKey(key) || table.keys.any { key.contains(it) || it.contains(key) }
+    }
+
     /** ESPN league-logo URL (e.g. "nba" → nba.png). */
     fun leagueUrl(league: String): String? = when (league) {
         "nfl", "nba", "mlb", "nhl" -> "https://a.espncdn.com/i/teamlogos/leagues/500/$league.png"

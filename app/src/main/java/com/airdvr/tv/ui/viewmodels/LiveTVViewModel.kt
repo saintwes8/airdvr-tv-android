@@ -27,6 +27,19 @@ enum class ScreenMode { GUIDE, FULLSCREEN, MULTIVIEW }
 
 enum class MultiViewNavDirection { LEFT, RIGHT, UP, DOWN }
 
+enum class PipSize(val widthDp: Int, val heightDp: Int, val label: String) {
+    SMALL(240, 135, "Small"),
+    MEDIUM(320, 180, "Medium"),
+    LARGE(480, 270, "Large")
+}
+
+enum class PipPlacement(val label: String) {
+    TOP_LEFT("Top Left"),
+    TOP_RIGHT("Top Right"),
+    BOTTOM_LEFT("Bottom Left"),
+    BOTTOM_RIGHT("Bottom Right")
+}
+
 data class PaneState(
     val channel: Channel? = null,
     val streamUrl: String? = null,
@@ -111,6 +124,10 @@ data class LiveTVUiState(
     val pipFocused: Boolean = false,
     val audioOnPip: Boolean = false,
     val pipPickerVisible: Boolean = false,
+    val pipSize: PipSize = PipSize.MEDIUM,
+    val pipPlacement: PipPlacement = PipPlacement.BOTTOM_RIGHT,
+    val pipOptionsMenuVisible: Boolean = false,
+    val pipSwapConfirmVisible: Boolean = false,
 
     // ── Scorebug overlay ──
     val gamePickerVisible: Boolean = false,
@@ -591,9 +608,35 @@ class LiveTVViewModel : ViewModel() {
                 else -> body.nba + body.nfl + body.mlb + body.nhl
             }
             val matched = matchGame(pool, program, channel?.guideNumber)
-            _uiState.value = _uiState.value.copy(currentSportsScore = matched)
+            val withProb = matched?.let { mergeWinProbability(it, league ?: it.league) } ?: matched
+            _uiState.value = _uiState.value.copy(currentSportsScore = withProb)
         } catch (e: Exception) {
             Log.d("SCORES", "fetch failed: ${e.message}")
+        }
+    }
+
+    /**
+     * Fetch live win-probability for an InProgress game and merge into the score.
+     * Skipped for non-InProgress games — endpoint only returns useful data live.
+     */
+    private suspend fun mergeWinProbability(game: GameScore, league: String?): GameScore {
+        val status = (game.status ?: "").lowercase()
+        if (!status.contains("progress") && !status.contains("inprogress")) return game
+        val lg = (league ?: "").lowercase()
+        val home = game.homeTeam ?: return game
+        val away = game.awayTeam ?: return game
+        if (lg.isBlank()) return game
+        return try {
+            val resp = api.getWinProbability(lg, home, away)
+            if (!resp.isSuccessful) return game
+            val body = resp.body() ?: return game
+            game.copy(
+                homeWinProbability = body.homeWinProbability,
+                awayWinProbability = body.awayWinProbability
+            )
+        } catch (e: Exception) {
+            Log.d("SCORES", "winprob fetch failed: ${e.message}")
+            game
         }
     }
 
@@ -1042,8 +1085,44 @@ class LiveTVViewModel : ViewModel() {
             pipChannel = null,
             pipStreamUrl = null,
             pipFocused = false,
-            audioOnPip = false
+            audioOnPip = false,
+            pipOptionsMenuVisible = false,
+            pipSwapConfirmVisible = false
         )
+    }
+
+    fun openPipOptions() {
+        if (_uiState.value.pipEnabled) {
+            _uiState.value = _uiState.value.copy(pipOptionsMenuVisible = true)
+        }
+    }
+
+    fun closePipOptions() {
+        _uiState.value = _uiState.value.copy(pipOptionsMenuVisible = false)
+    }
+
+    fun setPipSize(size: PipSize) {
+        _uiState.value = _uiState.value.copy(pipSize = size)
+    }
+
+    fun setPipPlacement(placement: PipPlacement) {
+        _uiState.value = _uiState.value.copy(pipPlacement = placement)
+    }
+
+    fun requestPipSwap() {
+        _uiState.value = _uiState.value.copy(
+            pipOptionsMenuVisible = false,
+            pipSwapConfirmVisible = true
+        )
+    }
+
+    fun confirmPipSwap() {
+        _uiState.value = _uiState.value.copy(pipSwapConfirmVisible = false)
+        swapPipAndMain()
+    }
+
+    fun cancelPipSwap() {
+        _uiState.value = _uiState.value.copy(pipSwapConfirmVisible = false)
     }
 
     fun focusPip() {

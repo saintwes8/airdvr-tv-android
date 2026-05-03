@@ -77,6 +77,13 @@ interface AirDVRApi {
     @GET("api/sports/scores/today")
     suspend fun getSportsScoresToday(): Response<SportsScoresResponse>
 
+    @GET("api/sports/win-probability")
+    suspend fun getWinProbability(
+        @Query("league") league: String,
+        @Query("home") home: String,
+        @Query("away") away: String
+    ): Response<WinProbabilityResponse>
+
     // ── Three-tier streaming + storage management ──────────────────────
 
     @GET("api/agent/info")

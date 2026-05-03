@@ -226,7 +226,14 @@ data class GameScore(
     @SerializedName("overUnder") val overUnder: Double? = null,
     @SerializedName("homeMoneyLine") val homeMoneyLine: Int? = null,
     @SerializedName("awayMoneyLine") val awayMoneyLine: Int? = null,
-    @SerializedName("seriesInfo") val seriesInfo: SeriesInfo? = null
+    @SerializedName("seriesInfo") val seriesInfo: SeriesInfo? = null,
+    @SerializedName("homeWinProbability") val homeWinProbability: Float? = null,
+    @SerializedName("awayWinProbability") val awayWinProbability: Float? = null
+)
+
+data class WinProbabilityResponse(
+    @SerializedName("homeWinProbability") val homeWinProbability: Float? = null,
+    @SerializedName("awayWinProbability") val awayWinProbability: Float? = null
 )
 
 data class SeriesInfo(

@@ -77,17 +77,23 @@ import com.airdvr.tv.data.models.EpgProgram
 import com.airdvr.tv.data.models.GameScore
 import com.airdvr.tv.data.repository.ChannelLogoRepository
 import com.airdvr.tv.ui.components.LoadingSpinner
+import com.airdvr.tv.ui.components.NetworkArtwork
+import com.airdvr.tv.ui.components.SportsTitleArtwork
 import com.airdvr.tv.ui.components.rememberPosterUrl
 import com.airdvr.tv.ui.theme.*
 import com.airdvr.tv.ui.viewmodels.LiveTVViewModel
 import com.airdvr.tv.ui.viewmodels.MultiViewNavDirection
 import com.airdvr.tv.ui.viewmodels.PaneState
+import com.airdvr.tv.ui.viewmodels.PipPlacement
+import com.airdvr.tv.ui.viewmodels.PipSize
 import com.airdvr.tv.ui.viewmodels.ScreenMode
 import com.airdvr.tv.ui.viewmodels.SportsCalendarViewModel
 import com.airdvr.tv.ui.viewmodels.gameKey
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.airdvr.tv.util.Constants
 import com.airdvr.tv.util.TeamLogos
+import com.airdvr.tv.util.formatGameTimeLocal
 import com.airdvr.tv.util.parseIsoToEpochSec
 import java.text.SimpleDateFormat
 import java.util.*
@@ -512,13 +518,28 @@ private fun handleFullscreenKey(
         KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
         KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> vm.pingNowPlayingBar()
     }
+    // PiP swap-confirm dialog (highest priority when visible)
+    if (uiState.pipSwapConfirmVisible) {
+        return when (code) {
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.confirmPipSwap(); true }
+            KeyEvent.KEYCODE_BACK -> { vm.cancelPipSwap(); true }
+            else -> false  // dialog handles its own d-pad focus
+        }
+    }
+    // PiP options menu visible
+    if (uiState.pipOptionsMenuVisible) {
+        return when (code) {
+            KeyEvent.KEYCODE_BACK -> { vm.closePipOptions(); true }
+            else -> false  // options menu uses focusable surfaces
+        }
+    }
     // PiP focused — controls operate on PiP
     if (uiState.pipFocused) {
         return when (code) {
             KeyEvent.KEYCODE_DPAD_LEFT -> { vm.unfocusPip(); true }
             KeyEvent.KEYCODE_DPAD_UP -> { vm.pipChannelUp(); true }
             KeyEvent.KEYCODE_DPAD_DOWN -> { vm.pipChannelDown(); true }
-            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.swapPipAndMain(); true }
+            KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> { vm.openPipOptions(); true }
             KeyEvent.KEYCODE_BACK -> { vm.closePip(); true }
             KeyEvent.KEYCODE_VOLUME_MUTE -> { vm.togglePipAudio(); true }
             else -> false
@@ -685,6 +706,10 @@ private fun LeftInfoPanel(
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     val posterUrl = rememberPosterUrl(focusedProgram?.title)
     val scrollState = rememberScrollState()
+    val isGenericSports = focusedProgram != null && isGenericSportsTitle(focusedProgram.title)
+    val isSportsProgram = isGenericSports ||
+        (focusedProgram != null && SportsCalendarViewModel.isSports(focusedProgram))
+    val logoInfo = focusedChannel?.guideName?.let { ChannelLogoRepository.getLogoInfo(it) }
 
     Column(
         modifier = modifier
@@ -703,19 +728,30 @@ private fun LeftInfoPanel(
                         .border(1.dp, PlexBorder, RoundedCornerShape(0.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!posterUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = posterUrl,
-                            contentDescription = focusedProgram?.title,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else {
-                        Text(
-                            (focusedChannel.guideName ?: "").take(3).uppercase(),
-                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
-                            color = PlexTextPrimary, textAlign = TextAlign.Center
-                        )
+                    when {
+                        isSportsProgram -> {
+                            SportsTitleArtwork(
+                                title = focusedProgram?.title,
+                                description = focusedProgram?.summary,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        !posterUrl.isNullOrBlank() -> {
+                            AsyncImage(
+                                model = posterUrl,
+                                contentDescription = focusedProgram?.title,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(0.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                        else -> {
+                            NetworkArtwork(
+                                network = logoInfo?.network,
+                                logoUrl = logoInfo?.logoUrl,
+                                fallbackLabel = focusedChannel.guideName,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
                     }
                 }
 
@@ -1076,22 +1112,36 @@ private fun FullscreenLayout(
             }
         }
 
-        // PiP window — top-right, separate ExoPlayer instance
+        // PiP window — placement-driven, separate ExoPlayer instance
         if (uiState.pipEnabled) {
+            val pipAlignment = when (uiState.pipPlacement) {
+                PipPlacement.TOP_LEFT -> Alignment.TopStart
+                PipPlacement.TOP_RIGHT -> Alignment.TopEnd
+                PipPlacement.BOTTOM_LEFT -> Alignment.BottomStart
+                PipPlacement.BOTTOM_RIGHT -> Alignment.BottomEnd
+            }
+            val pipPad = when (uiState.pipPlacement) {
+                PipPlacement.TOP_LEFT -> PaddingValues(top = 24.dp, start = 24.dp)
+                PipPlacement.TOP_RIGHT -> PaddingValues(top = 24.dp, end = 24.dp)
+                PipPlacement.BOTTOM_LEFT -> PaddingValues(bottom = 64.dp, start = 24.dp)
+                PipPlacement.BOTTOM_RIGHT -> PaddingValues(bottom = 64.dp, end = 24.dp)
+            }
             PipOverlay(
                 channel = uiState.pipChannel,
                 focused = uiState.pipFocused,
                 audioOnPip = uiState.audioOnPip,
                 player = pipPlayer,
+                size = uiState.pipSize,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 24.dp, end = 24.dp)
+                    .align(pipAlignment)
+                    .padding(pipPad)
             )
         }
 
-        // Scorebug column — top-right, offset below PiP if active
+        // Scorebug column — top-right, offset below PiP if PiP is also top-right
         if (uiState.scorebugGames.isNotEmpty()) {
-            val topPad = if (uiState.pipEnabled) (24 + 180 + 12).dp else 24.dp
+            val pipPushesScorebug = uiState.pipEnabled && uiState.pipPlacement == PipPlacement.TOP_RIGHT
+            val topPad = if (pipPushesScorebug) (24 + uiState.pipSize.heightDp + 12).dp else 24.dp
             ScorebugOverlay(
                 games = uiState.scorebugGames,
                 channels = uiState.channels,
@@ -1144,6 +1194,31 @@ private fun FullscreenLayout(
                 programsByChannel = uiState.programsByChannel,
                 onPick = { viewModel.setPipChannel(it) },
                 onCancel = { viewModel.closePipPicker() }
+            )
+        }
+
+        // PiP options menu — Size / Placement / Make Main / Close
+        if (uiState.pipOptionsMenuVisible && uiState.pipEnabled) {
+            PipOptionsMenu(
+                pipChannel = uiState.pipChannel,
+                currentSize = uiState.pipSize,
+                currentPlacement = uiState.pipPlacement,
+                onSize = { viewModel.setPipSize(it) },
+                onPlacement = { viewModel.setPipPlacement(it) },
+                onMakeMain = { viewModel.requestPipSwap() },
+                onClosePip = { viewModel.closePip() },
+                onDismiss = { viewModel.closePipOptions() }
+            )
+        }
+
+        // PiP make-main confirmation dialog
+        if (uiState.pipSwapConfirmVisible) {
+            PipSwapConfirmDialog(
+                pipChannelLabel = uiState.pipChannel?.let {
+                    "${it.guideNumber ?: ""} ${it.guideName ?: ""}".trim()
+                } ?: "",
+                onConfirm = { viewModel.confirmPipSwap() },
+                onCancel = { viewModel.cancelPipSwap() }
             )
         }
 
@@ -1307,18 +1382,23 @@ private fun FullscreenActionOverlay(
                         )
                     }
 
-                    if (program != null && sportsScore == null) {
+                    if (program != null) {
                         val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-                        val parts = mutableListOf<String>()
-                        program.episodeTitle?.let { if (it.isNotBlank()) parts.add(it) }
-                        val s = timeFormat.format(Date(program.startEpochSec * 1000))
-                        val e = timeFormat.format(Date(program.endEpochSec * 1000))
-                        parts.add("$s - $e")
-                        program.category?.let { if (it.isNotBlank()) parts.add(it) }
-                        // HD indicator
-                        val chSuffix = channel?.guideNumber?.substringAfter(".", "")
-                        if (chSuffix == "1" || chSuffix == "") parts.add("HD")
-                        Text(parts.joinToString("  ·  "), fontSize = 13.sp, color = PlexTextSecondary)
+                        // Time + category metadata row — show only when no live score
+                        // (the SportsScorePanel already renders matchup time / period).
+                        if (sportsScore == null) {
+                            val parts = mutableListOf<String>()
+                            program.episodeTitle?.let { if (it.isNotBlank()) parts.add(it) }
+                            val s = timeFormat.format(Date(program.startEpochSec * 1000))
+                            val e = timeFormat.format(Date(program.endEpochSec * 1000))
+                            parts.add("$s - $e")
+                            program.category?.let { if (it.isNotBlank()) parts.add(it) }
+                            val chSuffix = channel?.guideNumber?.substringAfter(".", "")
+                            if (chSuffix == "1" || chSuffix == "") parts.add("HD")
+                            Text(parts.joinToString("  ·  "), fontSize = 13.sp, color = PlexTextSecondary)
+                        }
+                        // EPG description — same source as the guide side panel.
+                        // Always shown when present, including for sports programs.
                         if (!program.summary.isNullOrBlank()) {
                             Text(
                                 program.summary,
@@ -1326,8 +1406,8 @@ private fun FullscreenActionOverlay(
                                 maxLines = 3, overflow = TextOverflow.Ellipsis
                             )
                         }
-                        // Up Next
-                        if (channel != null) {
+                        // Up Next — non-sports programs only.
+                        if (sportsScore == null && channel != null) {
                             val nextProg = programs?.firstOrNull { it.startEpochSec >= program.endEpochSec }
                             if (nextProg != null) {
                                 val nextStart = timeFormat.format(Date(nextProg.startEpochSec * 1000))
@@ -1918,10 +1998,9 @@ private fun SportsScorePanel(
             }
             val q = score.quarter?.takeIf { it.isNotBlank() }
             val tr = score.timeRemaining?.takeIf { it.isNotBlank() }
-            val timeFmt = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
-            val tipOff = parseIsoToEpochSec(score.startTime).takeIf { it > 0L }
-                ?.let { timeFmt.format(Date(it * 1000L)) }
-                ?: timeFmt.format(Date(program.startEpochSec * 1000L))
+            val tipOff = formatGameTimeLocal(score.startTime).ifBlank {
+                formatGameTimeLocal(program.startTime)
+            }
             val statusLine = when {
                 live && q != null && tr != null -> "$q · $tr"
                 live && q != null -> q
@@ -1931,6 +2010,11 @@ private fun SportsScorePanel(
                 else -> "TIP OFF $tipOff"
             }
             Text(statusLine, fontSize = 14.sp, color = PlexTextSecondary, fontWeight = FontWeight.Medium)
+        }
+
+        // Live win-probability bar — InProgress games only
+        if (live && score.homeWinProbability != null && score.awayWinProbability != null) {
+            WinProbabilityBar(score = score)
         }
 
         // Betting lines — only when toggle ON and at least one field non-null
@@ -2024,6 +2108,60 @@ private fun BettingLinesBlock(score: GameScore) {
     }
 }
 
+/**
+ * Live win-probability bar. Renders "AWAY xx% [bar] yy% HOME" with the bar width
+ * proportional to home/away probability. Probabilities are floats in [0, 1].
+ */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun WinProbabilityBar(score: GameScore) {
+    val home = score.homeWinProbability?.coerceIn(0f, 1f) ?: return
+    val away = score.awayWinProbability?.coerceIn(0f, 1f) ?: return
+    val total = (home + away).takeIf { it > 0f } ?: return
+    val awayPct = away / total
+    val homePct = home / total
+    val league = (score.league ?: "").lowercase()
+    val homeAbbr = TeamLogos.abbrev(league, score.homeTeam).ifBlank { "HOME" }
+    val awayAbbr = TeamLogos.abbrev(league, score.awayTeam).ifBlank { "AWAY" }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                "$awayAbbr ${(awayPct * 100).toInt()}%",
+                fontSize = 11.sp, color = PlexTextSecondary, fontWeight = FontWeight.Bold
+            )
+            Text(
+                "${(homePct * 100).toInt()}% $homeAbbr",
+                fontSize = 11.sp, color = PlexTextSecondary, fontWeight = FontWeight.Bold
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(20.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(PlexBorder)
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(awayPct.coerceAtLeast(0.001f))
+                    .fillMaxHeight()
+                    .background(Color(0xFFE63946))
+            )
+            Box(
+                modifier = Modifier
+                    .weight(homePct.coerceAtLeast(0.001f))
+                    .fillMaxHeight()
+                    .background(PlexAccent)
+            )
+        }
+    }
+}
+
 private fun formatSpread(s: Double): String =
     if (s == s.toInt().toDouble()) "${s.toInt()}" else "%.1f".format(s)
 
@@ -2107,12 +2245,13 @@ private fun PipOverlay(
     focused: Boolean,
     audioOnPip: Boolean,
     player: ExoPlayer,
+    size: PipSize = PipSize.MEDIUM,
     modifier: Modifier = Modifier
 ) {
     if (channel == null) return
     Box(
         modifier = modifier
-            .size(width = 320.dp, height = 180.dp)
+            .size(width = size.widthDp.dp, height = size.heightDp.dp)
             .clip(RoundedCornerShape(0.dp))
             .background(Color.Black)
             .border(
@@ -2201,7 +2340,10 @@ private fun PipChannelPicker(
                 fontSize = 12.sp, color = PlexTextTertiary
             )
             Spacer(Modifier.height(12.dp))
+            val listState = rememberLazyListState()
+            val coroutineScope = rememberCoroutineScope()
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 400.dp),
@@ -2215,10 +2357,28 @@ private fun PipChannelPicker(
                     }
                     var isFocused by remember { mutableStateOf(false) }
                     val rowMod = (if (idx == 0) Modifier.focusRequester(firstRowFocus) else Modifier)
-                        .onFocusChanged { isFocused = it.isFocused }
+                        .onFocusChanged {
+                            isFocused = it.isFocused
+                            if (it.isFocused) {
+                                coroutineScope.launch {
+                                    val info = listState.layoutInfo
+                                    val visible = info.visibleItemsInfo
+                                    val first = visible.firstOrNull()?.index ?: 0
+                                    val last = visible.lastOrNull()?.index ?: 0
+                                    if (idx <= first || idx >= last) {
+                                        listState.animateScrollToItem(
+                                            (idx - 2).coerceAtLeast(0)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     Surface(
                         onClick = { if (!isMain) onPick(ch) },
-                        modifier = rowMod.fillMaxWidth().height(56.dp),
+                        modifier = rowMod
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .focusable(),
                         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
                         colors = ClickableSurfaceDefaults.colors(
                             containerColor = Color.Black,
@@ -2247,14 +2407,14 @@ private fun PipChannelPicker(
                             )
                             Spacer(Modifier.width(12.dp))
                             Box(
-                                Modifier.size(32.dp).background(Color(0xFF0A0A0A)),
+                                Modifier.size(36.dp).background(Color(0xFF0A0A0A)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 if (!logoInfo?.logoUrl.isNullOrBlank()) {
                                     AsyncImage(
                                         model = logoInfo!!.logoUrl,
                                         contentDescription = ch.guideName,
-                                        modifier = Modifier.size(28.dp),
+                                        modifier = Modifier.size(32.dp),
                                         contentScale = ContentScale.Fit
                                     )
                                 } else {
@@ -2269,18 +2429,27 @@ private fun PipChannelPicker(
                                 modifier = Modifier.weight(1f),
                                 verticalArrangement = Arrangement.Center
                             ) {
+                                // Line 1 — show title, bold + larger
+                                val titleLine = nowProgram?.title?.takeIf { it.isNotBlank() }
+                                    ?: ch.guideName ?: ""
                                 Text(
-                                    "${ch.guideNumber ?: ""} ${ch.guideName ?: ""}".trim(),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    titleLine,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
                                     color = if (isMain) PlexTextTertiary else Color.White,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (!nowProgram?.title.isNullOrBlank()) {
+                                // Line 2 — channel # + network, muted
+                                val chLabel = listOfNotNull(
+                                    ch.guideNumber?.takeIf { it.isNotBlank() },
+                                    ch.guideName?.takeIf { it.isNotBlank() }
+                                ).joinToString(" ")
+                                if (chLabel.isNotBlank()) {
                                     Text(
-                                        nowProgram!!.title!!,
-                                        fontSize = 11.sp,
+                                        chLabel,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Normal,
                                         color = PlexTextTertiary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -2298,6 +2467,218 @@ private fun PipChannelPicker(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PIP OPTIONS MENU + SWAP CONFIRM DIALOG
+// ═══════════════════════════════════════════════════════════════════════════
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PipOptionsMenu(
+    pipChannel: Channel?,
+    currentSize: PipSize,
+    currentPlacement: PipPlacement,
+    onSize: (PipSize) -> Unit,
+    onPlacement: (PipPlacement) -> Unit,
+    onMakeMain: () -> Unit,
+    onClosePip: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { try { firstFocus.requestFocus() } catch (_: Exception) {} }
+
+    val align = when (currentPlacement) {
+        PipPlacement.TOP_LEFT -> Alignment.TopStart
+        PipPlacement.TOP_RIGHT -> Alignment.TopEnd
+        PipPlacement.BOTTOM_LEFT -> Alignment.BottomStart
+        PipPlacement.BOTTOM_RIGHT -> Alignment.BottomEnd
+    }
+    val pad = when (currentPlacement) {
+        PipPlacement.TOP_LEFT -> PaddingValues(top = 24.dp, start = 24.dp + currentSize.widthDp.dp + 8.dp)
+        PipPlacement.TOP_RIGHT -> PaddingValues(top = 24.dp, end = 24.dp + currentSize.widthDp.dp + 8.dp)
+        PipPlacement.BOTTOM_LEFT -> PaddingValues(bottom = 64.dp, start = 24.dp + currentSize.widthDp.dp + 8.dp)
+        PipPlacement.BOTTOM_RIGHT -> PaddingValues(bottom = 64.dp, end = 24.dp + currentSize.widthDp.dp + 8.dp)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.4f))
+            .clickable(onClick = onDismiss)
+    ) {
+        Column(
+            modifier = Modifier
+                .align(align)
+                .padding(pad)
+                .width(220.dp)
+                .background(PlexBg)
+                .border(1.dp, PlexBorder)
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                "Size",
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PlexTextTertiary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            PipSize.values().forEachIndexed { idx, s ->
+                PipMenuRow(
+                    label = "${s.label} (${s.widthDp}×${s.heightDp})",
+                    selected = s == currentSize,
+                    focusRequester = if (idx == 0) firstFocus else null,
+                    onClick = { onSize(s) }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Placement",
+                fontSize = 11.sp, fontWeight = FontWeight.Bold, color = PlexTextTertiary,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            PipPlacement.values().forEach { p ->
+                PipMenuRow(
+                    label = p.label,
+                    selected = p == currentPlacement,
+                    onClick = { onPlacement(p) }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(PlexBorder)
+            )
+            Spacer(Modifier.height(6.dp))
+            PipMenuRow(label = "Make Main Channel", selected = false, onClick = onMakeMain)
+            PipMenuRow(label = "Close PiP", selected = false, onClick = onClosePip)
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PipMenuRow(
+    label: String,
+    selected: Boolean,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+    val mod = (focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+        .onFocusChanged { isFocused = it.isFocused }
+    Surface(
+        onClick = onClick,
+        modifier = mod
+            .fillMaxWidth()
+            .height(36.dp)
+            .focusable(),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = PlexAccent.copy(alpha = 0.3f)
+        ),
+        border = ClickableSurfaceDefaults.border(
+            border = androidx.tv.material3.Border.None,
+            focusedBorder = androidx.tv.material3.Border.None
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                label,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = when {
+                    isFocused -> Color.White
+                    selected -> PlexAccent
+                    else -> PlexTextSecondary
+                },
+                modifier = Modifier.weight(1f)
+            )
+            if (selected) {
+                Text("✓", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PlexAccent)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun PipSwapConfirmDialog(
+    pipChannelLabel: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val confirmFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { try { confirmFocus.requestFocus() } catch (_: Exception) {} }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .width(420.dp)
+                .background(PlexBg)
+                .border(1.dp, PlexBorder)
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Switch to PiP channel?",
+                fontSize = 16.sp, fontWeight = FontWeight.Bold, color = PlexTextPrimary
+            )
+            Text(
+                if (pipChannelLabel.isNotBlank()) "Switch $pipChannelLabel to main view?"
+                else "Switch the PiP channel to main view?",
+                fontSize = 13.sp, color = PlexTextSecondary
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)
+            ) {
+                Surface(
+                    onClick = onCancel,
+                    modifier = Modifier.height(40.dp).focusable(),
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = PlexCard,
+                        focusedContainerColor = PlexBorder
+                    )
+                ) {
+                    Text(
+                        "Cancel",
+                        fontSize = 13.sp, color = PlexTextPrimary,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                    )
+                }
+                Surface(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .focusRequester(confirmFocus)
+                        .height(40.dp)
+                        .focusable(),
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(0.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = PlexAccent,
+                        focusedContainerColor = PlexAccent
+                    )
+                ) {
+                    Text(
+                        "Confirm",
+                        fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp)
+                    )
                 }
             }
         }
@@ -2454,13 +2835,9 @@ private fun LeagueFilterTab(
     }
 }
 
-/** Format start time as e.g. "8:00 PM". Empty if unknown. */
-private fun gameStartLabel(game: GameScore): String {
-    val epoch = parseIsoToEpochSec(game.startTime)
-    if (epoch <= 0L) return ""
-    val fmt = SimpleDateFormat("h:mm a", Locale.getDefault())
-    return fmt.format(Date(epoch * 1000L))
-}
+/** Format start time as e.g. "8:00 PM" in the user's local timezone. */
+private fun gameStartLabel(game: GameScore): String =
+    formatGameTimeLocal(game.startTime)
 
 /** Short period text for live games: "Q4 5:32" / "P2 12:08" / "T9" / "LIVE". */
 private fun gamePeriodLabel(game: GameScore): String {
